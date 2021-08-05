@@ -1,4 +1,6 @@
-#pragma once
+#ifndef COMMON_HPP
+#define COMMON_HPP
+
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
@@ -10,6 +12,8 @@
 #include "dwarf.hpp"
 #include "meter.hpp"
 #include "options.hpp"
+
+#include <set>
 
 template <class Collection>
 void dump_collection(const Collection &c, std::ostream &os = std::cout) {
@@ -25,6 +29,8 @@ void dump_collection(const Collection &c, std::ostream &os = std::cout) {
 }
 
 namespace helpers {
+std::vector<uint32_t> make_unique_random(size_t size);
+
 template <class T> std::vector<T> make_random(size_t size) {
   std::random_device rd;
   std::mt19937 gen(rd());
@@ -49,3 +55,5 @@ bool check_first(const T &v1, const U &v2, size_t sz) {
 }
 
 } // namespace helpers
+
+#endif

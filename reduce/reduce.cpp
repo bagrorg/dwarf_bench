@@ -50,7 +50,8 @@ void ReduceDPCPP::_run(const size_t buf_size, Meter &meter) {
     q.submit([&](sycl::handler &cgh) {
       auto s = src.get_access<sycl::access::mode::read>(cgh);
       auto o = out.get_access<sycl::access::mode::discard_write>(cgh);
-      auto reducer = sycl::ONEAPI::reduction(o, sycl::ONEAPI::plus<>());
+      auto reducer =
+          sycl::ext::oneapi::reduction(o, sycl::ext::oneapi::plus<>());
 
       cgh.parallel_for<class dpcreduction>(
           rng, reducer, [=](sycl::nd_item<1> it, auto &reducer_arg) {

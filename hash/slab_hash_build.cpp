@@ -1,5 +1,6 @@
 #include "slab_hash_build.hpp"
 #include "common/dpcpp/slab_hash.hpp"
+#include <math.h>
 
 using std::pair;
 
@@ -20,29 +21,19 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
   SlabHash::DefaultHasher<32, 48, 1031> hasher;
 
   for (auto it = 0; it < opts.iterations; ++it) {
-    int work_size = (buf_size / scale);
-    sycl::nd_range<1> r{SlabHash::SUBGROUP_SIZE * work_size, SlabHash::SUBGROUP_SIZE};
-    std::vector<SlabHash::SlabList<pair<uint32_t, uint32_t>>> data(
-        SlabHash::BUCKETS_COUNT);
-    for (auto &e : data) {
-      e.root = sycl::global_ptr<SlabHash::SlabNode<pair<uint32_t, uint32_t>>>(
-          sycl::malloc_shared<SlabHash::SlabNode<pair<uint32_t, uint32_t>>>(
-              SlabHash::CLUSTER_SIZE, q));
+    int work_size = ceil((float)buf_size / scale);
 
-      for (int i = 0; i < SlabHash::CLUSTER_SIZE - 1; i++) {
-        *(e.root + i) =
-            SlabHash::SlabNode<pair<uint32_t, uint32_t>>({SlabHash::EMPTY_UINT32_T, 0});
-        (e.root + i)->next = (e.root + i + 1);
-      }
-    }
+    sycl::nd_range<1> r{SlabHash::SUBGROUP_SIZE * work_size,
+                        SlabHash::SUBGROUP_SIZE};
+    SlabHash::AllocAdapter<std::pair<uint32_t, uint32_t>> adap(SlabHash::BUCKETS_COUNT, {SlabHash::EMPTY_UINT32_T, 0}, q);
 
     std::vector<uint32_t> output(buf_size, 0);
     std::vector<uint32_t> expected(buf_size, 1);
 
     {
-      sycl::buffer<SlabHash::SlabList<pair<uint32_t, uint32_t>>> data_buf(data);
+      sycl::buffer<SlabHash::SlabList<pair<uint32_t, uint32_t>>> data_buf(adap._data);
       sycl::buffer<
-          sycl::global_ptr<SlabHash::SlabNode<pair<uint32_t, uint32_t>>>>
+          sycl::device_ptr<SlabHash::SlabNode<pair<uint32_t, uint32_t>>>>
           its(work_size);
       sycl::buffer<uint32_t> src(host_src);
 
@@ -60,12 +51,12 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
                ht(SlabHash::EMPTY_UINT32_T, h, data_acc.get_pointer(), it,
                   itrs[it.get_group().get_id()]);
 
-           for (int i = ind * scale; i < ind * scale + scale; i++) {
+           for (int i = ind * scale; i < ind * scale + scale && i < buf_size;
+                i++) {
              ht.insert(s[i], s[i]);
            }
          });
-       })
-          .wait();
+       }).wait();
 
       auto host_end = std::chrono::steady_clock::now();
       auto host_exe_time =
@@ -92,14 +83,14 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
                    ht(SlabHash::EMPTY_UINT32_T, h, data_acc.get_pointer(), it,
                       itrs[it.get_group().get_id()]);
 
-               for (int i = ind * scale; i < ind * scale + scale; i++) {
+               for (int i = ind * scale;
+                    i < ind * scale + scale && i < buf_size; i++) {
                  auto ans = ht.find(s[i]);
                  if (it.get_local_id() == 0)
                    o[i] = static_cast<bool>(ans);
                }
              });
-       })
-          .wait();
+       }).wait();
 
       out_buf.get_access<sycl::access::mode::read>();
       if (output != expected) {
@@ -109,10 +100,6 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
 
       DwarfParams params{{"buf_size", std::to_string(buf_size)}};
       meter.add_result(std::move(params), std::move(result));
-    }
-
-    for (auto &e : data) {
-      sycl::free(e.root, q);
     }
   }
 }

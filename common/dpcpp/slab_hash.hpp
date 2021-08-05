@@ -23,7 +23,6 @@ template <size_t A, size_t B, size_t P> struct DefaultHasher {
 };
 
 template <typename T> struct SlabNode {
-  SlabNode() = default;
   SlabNode(T el) {
     for (int i = 0; i < SLAB_SIZE; i++) {
       data[i] = el;
@@ -31,13 +30,48 @@ template <typename T> struct SlabNode {
   }
 
   T data[SLAB_SIZE];
-  sycl::global_ptr<SlabNode<T>> next = nullptr;
+  sycl::device_ptr<SlabNode<T>> next = nullptr;
 };
 
 template <typename T> struct SlabList {
   SlabList() = default;
+  SlabList(T empty, sycl::queue &q) {
+    auto tmp = sycl::device_ptr<SlabNode<T>>(
+        sycl::malloc_device<SlabNode<T>>(CLUSTER_SIZE, q));
 
-  sycl::global_ptr<SlabNode<T>> root;
+    q.parallel_for(CLUSTER_SIZE,
+                   [=](auto &i) {
+                     *(tmp + i) = SlabNode<T>(empty);
+                     (tmp + i)->next = (tmp + i + 1);
+                   })
+        .wait();
+
+    root = tmp;
+  }
+
+  void clear(sycl::queue &q) { sycl::free(root, q); }
+
+  sycl::device_ptr<SlabNode<T>> root;
+};
+
+template <typename T> struct AllocAdapter {
+  AllocAdapter(size_t bucket_size, T empty, sycl::queue &q)
+      : _q(q) {
+    _data.resize(bucket_size);
+
+    for (auto &e : _data) {
+      e = SlabList<T>(empty, _q);
+    }
+  }
+
+  ~AllocAdapter() {
+    for (auto &e : _data) {
+      e.clear(_q);
+    }
+  }
+
+  std::vector<SlabList<T>> _data;
+  sycl::queue &_q;
 };
 
 template <typename K, typename T, typename Hash> class SlabHashTable {
@@ -46,7 +80,7 @@ public:
   SlabHashTable(K empty, Hash hasher,
                 sycl::global_ptr<SlabList<std::pair<K, T>>> lists,
                 sycl::nd_item<1> &it,
-                sycl::global_ptr<SlabNode<std::pair<K, T>>> &iter)
+                 sycl::device_ptr<SlabNode<std::pair<K, T>>> &iter)
       : _lists(lists), _gr(it.get_group()), _it(it), _empty(empty),
         _hasher(hasher), _iter(iter), _ind(_it.get_local_id()){};
 
@@ -117,9 +151,9 @@ private:
     for (int j = 0; j < SUBGROUP_SIZE; j++) {
       if (cl::sycl::group_broadcast(_gr, find, j)) {
         K tmp_empty = _empty;
-        bool done = _ind == j ? sycl::ONEAPI::atomic_ref<
-                                    K, sycl::ONEAPI::memory_order::acq_rel,
-                                    sycl::ONEAPI::memory_scope::system,
+        bool done = _ind == j ? sycl::ext::oneapi::atomic_ref<
+                                    K, sycl::ext::oneapi::memory_order::acq_rel,
+                                    sycl::ext::oneapi::memory_scope::device,
                                     sycl::access::address_space::global_space>(
                                     _iter->data[i].first)
                                     .compare_exchange_strong(tmp_empty, _key)
@@ -138,12 +172,17 @@ private:
 
   bool find_in_node() {
     bool find = false;
+    bool empty = true;
+    bool total_empty = true;
     bool total_found = false;
 
     for (int i = _ind; i <= _ind + SUBGROUP_SIZE * (CONST - 1);
          i += SUBGROUP_SIZE) {
       find = ((_iter->data[i].first) == _key);
+      empty = ((_iter->data[i].first) != _empty);
       sycl::group_barrier(_gr);
+      total_empty = sycl::any_of_group(_gr, empty);
+      if(!total_empty) return false;
       total_found = sycl::any_of_group(_gr, find);
 
       if (total_found) {
@@ -169,7 +208,7 @@ private:
   }
 
   sycl::global_ptr<SlabList<std::pair<K, T>>> _lists;
-  sycl::global_ptr<SlabNode<std::pair<K, T>>> &_iter;
+   sycl::device_ptr<SlabNode<std::pair<K, T>>> &_iter;
   sycl::group<1> _gr;
   sycl::nd_item<1> &_it;
   size_t _ind;

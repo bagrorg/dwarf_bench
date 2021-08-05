@@ -16,6 +16,10 @@ struct Result {
   size_t bytes_per_iteration = 0;
   unsigned long kernel_time = 0;
   Duration host_time;
+  Duration build_time;
+  Duration probe_time;
+
+  bool isJoin = false;
   bool valid = true;
 };
 

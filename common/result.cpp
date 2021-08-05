@@ -4,6 +4,10 @@
 std::ostream &operator<<(std::ostream &os, const Result &res) {
   os << "Kernel duration: " << ((double)res.kernel_time) / 1000.0 << " us\n"
      << "Host duration:   " << res.host_time.count() << " us\n";
+  if (res.isJoin) {
+    os << "Build time: " << res.build_time.count() << " us\n"
+       << "Probe time: " << res.probe_time.count() << " us\n";
+  }
   return os;
 }
 

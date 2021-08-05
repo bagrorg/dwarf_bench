@@ -47,13 +47,10 @@ RUN mkdir /cmake && cd /cmake \
 
 ENV PATH="/cmake/cmake-3.21.0-linux-x86_64/bin:${PATH}"
 
-RUN cd root && wget https://github.com/intel/llvm/archive/refs/tags/sycl-nightly/20210725.tar.gz \
-	    && tar -xf 20210725.tar.gz \
-            && cd llvm-sycl-nightly-20210725 \
-            && cd buildbot \
-	    && python3.7 configure.py && python3.7 compile.py
+RUN cd root && wget https://github.com/intel/llvm/releases/download/sycl-nightly%2F20210725/dpcpp-compiler.tar.gz \
+	    && tar -xf dpcpp-compiler.tar.gz 
 
-RUN cd root && rm -rf 20210725.tar.gz
+RUN cd root && rm -rf dpcpp-compiler.tar.gz
 
-ENV LD_LIBRARY_PATH=/root/llvm-sycl-nightly-20210725/build/lib:$LD_LIBRARY_PATH
-ENV PATH=/root/llvm-sycl-nightly-20210725/build/bin:$PATH
+ENV LD_LIBRARY_PATH=/root/dpcpp_compiler/lib:$LD_LIBRARY_PATH
+ENV PATH=/root/dpcpp_compiler/bin:$PATH

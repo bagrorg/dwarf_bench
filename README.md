@@ -16,6 +16,6 @@
 * docker build . --network host -t dwarfs-dev  
 * docker run --privileged -it --name spicy -v /path/to/dwarf_bench:/dwarf_bench dwarfs-dev:latest bash
 * mkdir build && cd build
-* CXX=clang++ CC=clang /dwarf_bench/ -DENABLE_DPCPP=on -DENABLE_TESTS=on
+* CXX=clang++ CC=clang cmake /dwarf_bench/ -DENABLE_DPCPP=on -DENABLE_TESTS=on
 * make -j`nproc`
 * cd tests && ctest
