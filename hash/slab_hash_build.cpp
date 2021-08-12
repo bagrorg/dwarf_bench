@@ -11,7 +11,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
 
   auto opts = meter.opts();
   const std::vector<uint32_t> host_src =
-      helpers::make_random<uint32_t>(buf_size);
+      helpers::make_unique_random(buf_size);
 
   auto sel = get_device_selector(opts);
   sycl::queue q{*sel};

@@ -96,7 +96,7 @@ TEST(SlabHash, find) {
            auto e = tests[j];
            auto list = &((*(adap_acc.get_pointer()))._data[h(e.first)]);
            if (list->root == nullptr) {
-             list->root = (*(adap_acc.get_pointer()))._heap.malloc_node();
+             list->root = (*(adap_acc.get_pointer()))._heap.malloc_node(h(e.first));
              *list->root = SlabNode<pair<uint32_t, uint32_t>>(
                  {SlabHash::EMPTY_UINT32_T, 0});
            }

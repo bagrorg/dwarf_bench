@@ -11,7 +11,7 @@ constexpr size_t SUBGROUP_SIZE = 32;
 constexpr size_t SLAB_SIZE_MULTIPLIER = 8;
 constexpr size_t SLAB_SIZE = SLAB_SIZE_MULTIPLIER * SUBGROUP_SIZE;
 
-constexpr size_t CLUSTER_SIZE = 20480;
+constexpr size_t CLUSTER_SIZE = 4192000;
 
 constexpr size_t BUCKETS_COUNT = 1024;
 
@@ -41,39 +41,47 @@ template <typename T> struct SlabList {
 };
 
 template <typename T> struct HeapMaster {
-  HeapMaster(sycl::queue &q) : _q(q) {
+  HeapMaster(size_t buckets_count, sycl::queue &q) : _q(q) {
+    list_group_size = buckets_count / num_of_list_groups; //mb problems
+    memory_for_group = CLUSTER_SIZE / num_of_list_groups;
     _heap = sycl::malloc_device<SlabNode<T>>(CLUSTER_SIZE, q);
-    _head = _heap;
-    sycl::device_ptr<uint32_t> tmp_lock = sycl::malloc_device<uint32_t>(1, q);
+    for (int i = 0; i < num_of_list_groups; i++) {
+        _head[i] = (_heap + memory_for_group * i);
+    }
+    sycl::device_ptr<uint32_t> tmp_lock = sycl::malloc_device<uint32_t>(num_of_list_groups, q);
 
-    q.single_task([=]() { *tmp_lock = 0; });
+    q.parallel_for(sycl::range<1> {num_of_list_groups}, [=](auto &i) { *(tmp_lock + i) = 0; });
 
     _lock = tmp_lock;
   }
 
   ~HeapMaster() { sycl::free(_heap, _q); }
 
-  sycl::device_ptr<SlabNode<T>> malloc_node() {
+  sycl::device_ptr<SlabNode<T>> malloc_node(size_t i) {
+    int ind = i / list_group_size;
     sycl::device_ptr<SlabNode<T>> ret;
     while (sycl::atomic<uint32_t,
-                        sycl::access::address_space::global_device_space>(_lock)
+                        sycl::access::address_space::global_device_space>(_lock + ind)
                .fetch_or(1)) {
     }
-    ret = _head;
-    _head++;
+    ret = _head[ind];
+    _head[ind]++;
     sycl::atomic<uint32_t, sycl::access::address_space::global_device_space>(
-        _lock)
+        _lock + ind)
         .fetch_and(0);
     return ret;
   }
 
-  sycl::device_ptr<uint32_t> _lock = nullptr;
+  sycl::device_ptr<uint32_t> _lock;
+  static constexpr size_t num_of_list_groups = 1024;
+  size_t list_group_size;
+  size_t memory_for_group;
   sycl::device_ptr<SlabNode<T>> _heap;
-  sycl::device_ptr<SlabNode<T>> _head;
+  sycl::device_ptr<SlabNode<T>> _head[num_of_list_groups];
   sycl::queue &_q;
 };
 template <typename T> struct AllocAdapter {
-  AllocAdapter(size_t bucket_size, T empty, sycl::queue &q, int work_size) : _q(q), _heap(q) {
+  AllocAdapter(size_t bucket_size, T empty, sycl::queue &q, int work_size) : _q(q), _heap(bucket_size, q) {
     sycl::device_ptr<SlabList<T>> _data_tmp = sycl::malloc_device<SlabList<T>>(bucket_size, q);
     sycl::device_ptr<uint32_t> _lock_tmp = sycl::malloc_device<uint32_t>(ceil((float)bucket_size / sizeof(uint32_t)), q);
     _its = sycl::malloc_device<sycl::device_ptr<SlabHash::SlabNode<std::pair<uint32_t, uint32_t>>>>(work_size, q);
@@ -165,7 +173,7 @@ private:
   void alloc_node(sycl::device_ptr<SlabNode<std::pair<K, T>>> &src) {
     lock();
     if (src == nullptr) {
-      auto tmp = _heap.malloc_node();
+      auto tmp = _heap.malloc_node(_hasher(_key));
       *tmp = SlabNode<std::pair<K, T>>({_empty, T()}); //!!!!!!
       src = tmp;
     }
