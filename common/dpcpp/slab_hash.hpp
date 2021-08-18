@@ -301,4 +301,187 @@ private:
   std::optional<T> _ans;
 };
 
+namespace exp {
+  template <typename K, typename T, typename Hash> class SlabHashTable {
+public:
+  SlabHashTable() = default;
+  SlabHashTable(K empty, sycl::nd_item<1> &it,
+                SlabHash::AllocAdapter<std::pair<K, T>> &adap, sycl::multi_ptr<sycl::device_ptr<SlabHash::SlabNode<std::pair<uint32_t, uint32_t>>>, sycl::access::address_space::local_space> ptr)
+      : _lists(adap._data), _gr(it.get_sub_group()), _it(it), _empty(empty),
+        _iter(*ptr), _ind(_it.get_local_id()),
+        _lock(adap._lock), _heap(adap._heap){};
+
+  void insert(K key, T val) {
+    _key = key;
+    _val = val;
+
+    if (_ind == 0) {
+      if ((_lists + _hasher(key))->root == nullptr) {
+        alloc_node((_lists + _hasher(key))->root);
+      }
+      _iter = (_lists + _hasher(key))->root;
+    }
+    sycl::group_barrier(_gr);
+
+    while (1) {
+      while (_iter != nullptr) {
+        if (insert_in_node()) {
+          return;
+        } else if (_ind == 0) {
+          _prev = _iter;
+          _iter = _iter->next;
+        }
+
+        sycl::group_barrier(_gr);
+      }
+      if (_ind == 0) {
+        alloc_node(_prev->next);
+        _iter = _prev->next;
+      }
+
+      sycl::group_barrier(_gr);
+    }
+  }
+
+  std::optional<T> find(K key) {
+    _key = key;
+    _ans = std::nullopt;
+
+    if (_ind == 0) {
+      _iter = (_lists + _hasher(key))->root;
+    }
+    sycl::group_barrier(_gr);
+
+    while (_iter != nullptr) {
+      if (find_in_node()) {
+        break;
+      } else if (_ind == 0) {
+        _iter = _iter->next;
+      }
+
+      sycl::group_barrier(_gr);
+    }
+    return _ans;
+  }
+
+private:
+  void alloc_node(sycl::device_ptr<SlabNode<std::pair<K, T>>> &src) {
+    lock();
+    if (src == nullptr) {
+      auto allocated_pointer = _heap.malloc_node();
+      *allocated_pointer = SlabNode<std::pair<K, T>>({_empty, T()}); //!!!!!!
+
+      src = allocated_pointer;
+    }
+    unlock();
+  }
+
+  void lock() {
+    auto list_index = _hasher(_key);
+    while (sycl::atomic<uint32_t,
+                        sycl::access::address_space::global_device_space>(
+               (_lock + (list_index / (UINT32_T_BIT))))
+               .fetch_or(1 << (list_index % (UINT32_T_BIT))) &
+           (1 << (list_index % (UINT32_T_BIT)))) {
+    }
+  }
+
+  void unlock() {
+    auto list_index = _hasher(_key);
+    sycl::atomic<uint32_t, sycl::access::address_space::global_device_space>(
+        (_lock + (list_index / (UINT32_T_BIT))))
+        .fetch_and(~(1 << (list_index % (UINT32_T_BIT))));
+  }
+
+  bool insert_in_node() {
+    bool total_found = false;
+    bool find = false;
+
+    for (int i = _ind; i < SUBGROUP_SIZE * SLAB_SIZE_MULTIPLIER;
+         i += SUBGROUP_SIZE) {
+      find = ((_iter->data[i].first) == _empty);
+      sycl::group_barrier(_gr);
+      total_found = sycl::any_of_group(_gr, find);
+
+      if (total_found) {
+        if (insert_in_subgroup(find, i)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  bool insert_in_subgroup(bool find, int i) {
+    for (int j = 0; j < SUBGROUP_SIZE; j++) {
+      if (cl::sycl::group_broadcast(_gr, find, j)) {
+        K tmp_empty = _empty;
+        bool done = _ind == j ? atomic_ref_device<K>(_iter->data[i].first)
+                                    .compare_exchange_strong(tmp_empty, _key)
+                              : false;
+        sycl::group_barrier(_gr);
+        if (done) {
+          _iter->data[i].second = _val;
+        }
+        if (cl::sycl::group_broadcast(_gr, done, j)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  bool find_in_node() {
+    bool find = false;
+    bool total_found = false;
+
+    for (int i = _ind; i < SUBGROUP_SIZE * SLAB_SIZE_MULTIPLIER;
+         i += SUBGROUP_SIZE) {
+      find = ((_iter->data[i].first) == _key);
+      sycl::group_barrier(_gr);
+      total_found = sycl::any_of_group(_gr, find);
+
+      if (total_found) {
+        find_in_subgroup(find, i);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  void find_in_subgroup(bool find, int i) {
+    for (int j = 0; j < SUBGROUP_SIZE; j++) {
+      if (cl::sycl::group_broadcast(_gr, find, j)) {
+        T tmp;
+        if (_ind == j)
+          tmp = _iter->data[i].second; // todo index shuffle
+
+        _ans = std::optional<T>{cl::sycl::group_broadcast(_gr, tmp, j)};
+        break;
+      }
+    }
+  }
+
+  sycl::device_ptr<SlabList<std::pair<K, T>>> _lists;
+  sycl::device_ptr<uint32_t> _lock;
+  sycl::device_ptr<SlabNode<std::pair<K, T>>> &_iter;
+  sycl::device_ptr<SlabNode<std::pair<K, T>>> _prev;
+  detail::HeapMaster<std::pair<K, T>> &_heap;
+  sycl::sub_group _gr;
+  sycl::nd_item<1> &_it;
+  size_t _ind;
+
+  K _empty;
+  Hash _hasher;
+
+  K _key;
+  T _val;
+
+  std::optional<T> _ans;
+};
+}
+
 } // namespace SlabHash

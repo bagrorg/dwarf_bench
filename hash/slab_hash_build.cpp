@@ -44,6 +44,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
              r, [=](sycl::nd_item<1> it)[
                     [intel::reqd_sub_group_size(SlabHash::SUBGROUP_SIZE)]] {
                size_t ind = it.get_group().get_id();
+               sycl::multi_ptr<int[64], sycl::access::address_space::local_space> ptr = sycl::group_local_memory<int[64]>(it.get_group());
 
                SlabHash::SlabHashTable<uint32_t, uint32_t,
                                        SlabHash::DefaultHasher<5, 11, 1031>>
