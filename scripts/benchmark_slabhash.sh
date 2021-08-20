@@ -1,0 +1,3 @@
+# 1kib, 10kib, 100kib, 1mb, 2mb, 4mb, ... 10mb
+./../build/dwarf_bench --dwarf SlabHashBuild --input_size 128 1280 12800 131072 262144 393216 524288 655360 786432 917504 1048576 1179648 1310720 --iterations 9 --device igpu --report_path /dwarf_bench/scripts/with_inclusive_build.csv
+./../build/dwarf_bench --dwarf SlabProbe --input_size 128 1280 12800 131072 262144 393216 524288 655360 786432 917504 1048576 1179648 1310720 --iterations 9 --device igpu --report_path /dwarf_bench/scripts/with_inclusive_probe.csv
