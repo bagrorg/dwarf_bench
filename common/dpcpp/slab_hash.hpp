@@ -54,33 +54,19 @@ namespace detail {
 template <typename T> struct HeapMaster {
   HeapMaster(size_t cluster_size, sycl::queue &q) : _q(q) {
     _heap = sycl::malloc_device<SlabNode<T>>(cluster_size, q);
-    _head = _heap;
-    sycl::device_ptr<uint32_t> tmp_lock = sycl::malloc_device<uint32_t>(1, q);
-
-    q.single_task([=]() { *tmp_lock = 0; });
-
-    _lock = tmp_lock;
+    _offset = 0;
   }
 
   ~HeapMaster() { sycl::free(_heap, _q); }
 
   sycl::device_ptr<SlabNode<T>> malloc_node() {
-    sycl::device_ptr<SlabNode<T>> ret;
-    while (sycl::atomic<uint32_t,
-                        sycl::access::address_space::global_device_space>(_lock)
-               .fetch_or(1)) {
-    }
-    ret = _head;
-    _head++;
-    sycl::atomic<uint32_t, sycl::access::address_space::global_device_space>(
-        _lock)
-        .fetch_and(0);
-    return ret;
+    uint32_t ret_offset = sycl::atomic<uint32_t>(sycl::global_ptr<uint32_t>(&_offset)).fetch_add(1);
+    return _heap + ret_offset;
   }
 
   sycl::device_ptr<uint32_t> _lock = nullptr;
   sycl::device_ptr<SlabNode<T>> _heap;
-  sycl::device_ptr<SlabNode<T>> _head;
+  uint32_t _offset;
   sycl::queue &_q;
 };
 } // namespace detail
