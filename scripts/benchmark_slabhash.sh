@@ -1,2 +1,2 @@
-./../build/dwarf_bench --dwarf SlabHashBuild --input_size 128 1280 12800 131072 262144 393216 524288 655360 786432 917504 1048576 1179648 1310720 --iterations 9 --device igpu --report_path /dwarf_bench/scripts/build.csv
-./../build/dwarf_bench --dwarf SlabProbe --input_size 128 1280 12800 131072 262144 393216 524288 655360 786432 917504 1048576 1179648 1310720 --iterations 9 --device igpu --report_path /dwarf_bench/scripts/probe.csv
+./../build/dwarf_bench --dwarf SlabHashBuild --input_size 131072 262144 393216 524288 655360 786432 917504 1048576 1179648 1310720 --iterations 9 --device igpu --report_path /dwarf_bench/reports/build_comp.csv
+./../build/dwarf_bench --dwarf SlabProbe --input_size 131072 262144 393216 524288 655360 786432 917504 1048576 1179648 1310720 --iterations 9 --device igpu --report_path /dwarf_bench/reports/probe_comp.csv
