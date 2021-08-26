@@ -1,5 +1,9 @@
 #pragma once
 
+#include <oneapi/dpl/algorithm>
+#include <oneapi/dpl/execution>
+#include <oneapi/dpl/iterator>
+
 #include "dpcpp_common.hpp"
 #include <CL/sycl.hpp>
 #include <algorithm>
@@ -78,6 +82,7 @@ template <typename T> struct AllocAdapter {
         sycl::malloc_device<SlabList<T>>(bucket_size, q);
     sycl::device_ptr<uint32_t> _lock_tmp = sycl::malloc_device<uint32_t>(
         ceil((float)bucket_size / sizeof(uint32_t)), q);
+    v = sycl::malloc_device<sycl::vec<uint8_t, 16>>(work_size, q);
 
     q.parallel_for(bucket_size, [=](auto &i) {
       *(_data_tmp + i) = SlabList<T>();
@@ -91,11 +96,15 @@ template <typename T> struct AllocAdapter {
   ~AllocAdapter() {
     sycl::free(_data, _q);
     sycl::free(_lock, _q);
+    sycl::free(v, _q);
   }
 
   sycl::device_ptr<SlabList<T>> _data;
   sycl::device_ptr<uint32_t> _lock;
   detail::HeapMaster<T> _heap;
+
+  sycl::device_ptr<sycl::vec<uint8_t, 16>> v;
+
   sycl::queue &_q;
 };
 
@@ -106,7 +115,8 @@ public:
                 SlabHash::AllocAdapter<std::pair<K, T>> &adap)
       : _lists(adap._data), _gr(it.get_sub_group()), _empty(empty),
          _ind(it.get_local_id()),
-        _lock(adap._lock), _heap(adap._heap){};
+        _lock(adap._lock), _heap(adap._heap),  _v(adap.v + it.get_group().get_id()){};
+
 
   void insert(K key, T val) {
     _key = key;
@@ -191,59 +201,66 @@ private:
   }
 
   bool insert_in_node() {
-    bool total_found = false;
-    bool find = false;
+    bool total_found = true;
 
     for (int i = _ind; i < SUBGROUP_SIZE * SLAB_SIZE_MULTIPLIER;
          i += SUBGROUP_SIZE) {
-      find = ((_iter->data[i].first) == _empty);
+      (*_v)[_ind] = ((_iter->data[i].first) == _empty);
       sycl::group_barrier(_gr);
-      total_found = sycl::any_of_group(_gr, find);
-
-      if (total_found) {
-        if (insert_in_subgroup(find, i)) {
+      uint8_t find = sycl::inclusive_scan_over_group(_gr, (*_v)[_ind],
+                                                       sycl::plus<uint8_t>());
+      int idx = 1;
+      while (sycl::any_of_group(_gr, find == idx)) {
+        bool done = false;
+        if (find == idx)
+          done = insert_in_subgroup(i);
+        if (cl::sycl::any_of_group(_gr, done)) {
           return true;
         }
+        idx++;
       }
     }
 
     return false;
   }
 
-  bool insert_in_subgroup(bool find, int i) {
-    for (int j = 0; j < SUBGROUP_SIZE; j++) {
-      if (cl::sycl::group_broadcast(_gr, find, j)) {
-        K tmp_empty = _empty;
-        bool done = _ind == j ? atomic_ref_device<K>(_iter->data[i].first)
-                                    .compare_exchange_strong(tmp_empty, _key)
-                              : false;
-        sycl::group_barrier(_gr);
-        if (done) {
-          _iter->data[i].second = _val;
-        }
-        if (cl::sycl::group_broadcast(_gr, done, j)) {
-          return true;
-        }
-      }
+  bool insert_in_subgroup(int i) {
+
+    K tmp_empty = _empty;
+    bool done = atomic_ref_device<K>(_iter->data[i].first)
+                    .compare_exchange_strong(tmp_empty, _key);
+    if (done) {
+      _iter->data[i].second = _val;
+      return true;
     }
 
     return false;
   }
 
   bool find_in_node() {
-    bool find = false;
-    bool total_found = false;
+    sycl::multi_ptr<T, sycl::access::address_space::local_space> _data_ans = sycl::group_local_memory<T>(_it.get_group());
+    bool total_found = true;
 
     for (int i = _ind; i < SUBGROUP_SIZE * SLAB_SIZE_MULTIPLIER;
          i += SUBGROUP_SIZE) {
-      find = ((_iter->data[i].first) == _key);
-      sycl::group_barrier(_gr);
-      total_found = sycl::any_of_group(_gr, find);
 
-      if (total_found) {
-        find_in_subgroup(find, i);
-        return true;
-      }
+      
+        (*_v)[_ind] = ((_iter->data[i].first) == _key);
+        sycl::group_barrier(_gr);
+        uint8_t find = sycl::inclusive_scan_over_group(_gr, (*_v)[_ind],
+                                                       sycl::plus<uint8_t>());
+        sycl::group_barrier(_gr);
+        if (sycl::any_of_group(_gr, find == 1)) {
+          if (find == 1 && (*_v)[_ind] == 1) {
+            *_data_ans = _iter->data[i].second;
+    
+          }
+          _ans = std::optional<T>{*_data_ans};
+          return true;
+        }
+      
+      
+    
     }
 
     return false;
@@ -277,6 +294,8 @@ private:
   T _val;
 
   std::optional<T> _ans;
+
+  sycl::device_ptr<sycl::vec<uint8_t, 16>> _v;
 };
 
 } // namespace SlabHash
