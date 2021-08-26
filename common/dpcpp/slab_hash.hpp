@@ -21,8 +21,8 @@ using atomic_ref_device =
 
 constexpr size_t UINT32_T_BIT = CHAR_BIT * sizeof(uint32_t);
 
-constexpr size_t SUBGROUP_SIZE = 32;
-constexpr size_t SLAB_SIZE_MULTIPLIER = 16;
+constexpr size_t SUBGROUP_SIZE = 16;
+constexpr size_t SLAB_SIZE_MULTIPLIER = 32;
 constexpr size_t SLAB_SIZE = SLAB_SIZE_MULTIPLIER * SUBGROUP_SIZE;
 
 constexpr size_t CLUSTER_SIZE = 20000;
