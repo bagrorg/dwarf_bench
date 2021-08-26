@@ -17,11 +17,11 @@ using atomic_ref_device =
 
 constexpr size_t UINT32_T_BIT = CHAR_BIT * sizeof(uint32_t);
 
-constexpr size_t SUBGROUP_SIZE = 16;
+constexpr size_t SUBGROUP_SIZE = 32;
 constexpr size_t SLAB_SIZE_MULTIPLIER = 16;
 constexpr size_t SLAB_SIZE = SLAB_SIZE_MULTIPLIER * SUBGROUP_SIZE;
 
-constexpr size_t CLUSTER_SIZE = 20480;
+constexpr size_t CLUSTER_SIZE = 20000;
 
 constexpr size_t BUCKETS_COUNT = 1024;
 
@@ -54,33 +54,18 @@ namespace detail {
 template <typename T> struct HeapMaster {
   HeapMaster(size_t cluster_size, sycl::queue &q) : _q(q) {
     _heap = sycl::malloc_device<SlabNode<T>>(cluster_size, q);
-    _head = _heap;
-    sycl::device_ptr<uint32_t> tmp_lock = sycl::malloc_device<uint32_t>(1, q);
-
-    q.single_task([=]() { *tmp_lock = 0; });
-
-    _lock = tmp_lock;
+    _offset = 0;
   }
 
   ~HeapMaster() { sycl::free(_heap, _q); }
 
   sycl::device_ptr<SlabNode<T>> malloc_node() {
-    sycl::device_ptr<SlabNode<T>> ret;
-    while (sycl::atomic<uint32_t,
-                        sycl::access::address_space::global_device_space>(_lock)
-               .fetch_or(1)) {
-    }
-    ret = _head;
-    _head++;
-    sycl::atomic<uint32_t, sycl::access::address_space::global_device_space>(
-        _lock)
-        .fetch_and(0);
-    return ret;
+    uint32_t ret_offset = sycl::atomic<uint32_t>(sycl::global_ptr<uint32_t>(&_offset)).fetch_add(1);
+    return _heap + ret_offset;
   }
 
-  sycl::device_ptr<uint32_t> _lock = nullptr;
   sycl::device_ptr<SlabNode<T>> _heap;
-  sycl::device_ptr<SlabNode<T>> _head;
+  uint32_t _offset;
   sycl::queue &_q;
 };
 } // namespace detail
@@ -93,9 +78,6 @@ template <typename T> struct AllocAdapter {
         sycl::malloc_device<SlabList<T>>(bucket_size, q);
     sycl::device_ptr<uint32_t> _lock_tmp = sycl::malloc_device<uint32_t>(
         ceil((float)bucket_size / sizeof(uint32_t)), q);
-    _its = sycl::malloc_device<
-        sycl::device_ptr<SlabHash::SlabNode<std::pair<uint32_t, uint32_t>>>>(
-        work_size, q);
 
     q.parallel_for(bucket_size, [=](auto &i) {
       *(_data_tmp + i) = SlabList<T>();
@@ -114,9 +96,6 @@ template <typename T> struct AllocAdapter {
   sycl::device_ptr<SlabList<T>> _data;
   sycl::device_ptr<uint32_t> _lock;
   detail::HeapMaster<T> _heap;
-  sycl::device_ptr<
-      sycl::device_ptr<SlabHash::SlabNode<std::pair<uint32_t, uint32_t>>>>
-      _its;
   sycl::queue &_q;
 };
 
@@ -125,8 +104,8 @@ public:
   SlabHashTable() = default;
   SlabHashTable(K empty, sycl::nd_item<1> &it,
                 SlabHash::AllocAdapter<std::pair<K, T>> &adap)
-      : _lists(adap._data), _gr(it.get_sub_group()), _it(it), _empty(empty),
-        _iter(adap._its[it.get_group().get_id()]), _ind(_it.get_local_id()),
+      : _lists(adap._data), _gr(it.get_sub_group()), _empty(empty),
+         _ind(it.get_local_id()),
         _lock(adap._lock), _heap(adap._heap){};
 
   void insert(K key, T val) {
@@ -137,15 +116,16 @@ public:
       if ((_lists + _hasher(key))->root == nullptr) {
         alloc_node((_lists + _hasher(key))->root);
       }
-      _iter = (_lists + _hasher(key))->root;
+      
     }
+    _iter = (_lists + _hasher(key))->root;
     sycl::group_barrier(_gr);
 
     while (1) {
       while (_iter != nullptr) {
         if (insert_in_node()) {
           return;
-        } else if (_ind == 0) {
+        } else {
           _prev = _iter;
           _iter = _iter->next;
         }
@@ -154,8 +134,9 @@ public:
       }
       if (_ind == 0) {
         alloc_node(_prev->next);
-        _iter = _prev->next;
       }
+      sycl::group_barrier(_gr);
+      _iter = _prev->next;
 
       sycl::group_barrier(_gr);
     }
@@ -165,15 +146,14 @@ public:
     _key = key;
     _ans = std::nullopt;
 
-    if (_ind == 0) {
-      _iter = (_lists + _hasher(key))->root;
-    }
+    _iter = (_lists + _hasher(key))->root;
+    
     sycl::group_barrier(_gr);
 
     while (_iter != nullptr) {
       if (find_in_node()) {
         break;
-      } else if (_ind == 0) {
+      } else {
         _iter = _iter->next;
       }
 
@@ -196,9 +176,8 @@ private:
 
   void lock() {
     auto list_index = _hasher(_key);
-    while (sycl::atomic<uint32_t,
-                        sycl::access::address_space::global_device_space>(
-               (_lock + (list_index / (UINT32_T_BIT))))
+    while (atomic_ref_device<uint32_t>(
+               (*(_lock + (list_index / (UINT32_T_BIT)))))
                .fetch_or(1 << (list_index % (UINT32_T_BIT))) &
            (1 << (list_index % (UINT32_T_BIT)))) {
     }
@@ -206,8 +185,8 @@ private:
 
   void unlock() {
     auto list_index = _hasher(_key);
-    sycl::atomic<uint32_t, sycl::access::address_space::global_device_space>(
-        (_lock + (list_index / (UINT32_T_BIT))))
+    atomic_ref_device<uint32_t>(
+        (*(_lock + (list_index / (UINT32_T_BIT)))))
         .fetch_and(~(1 << (list_index % (UINT32_T_BIT))));
   }
 
@@ -285,11 +264,10 @@ private:
 
   sycl::device_ptr<SlabList<std::pair<K, T>>> _lists;
   sycl::device_ptr<uint32_t> _lock;
-  sycl::device_ptr<SlabNode<std::pair<K, T>>> &_iter;
+  sycl::device_ptr<SlabNode<std::pair<K, T>>> _iter;
   sycl::device_ptr<SlabNode<std::pair<K, T>>> _prev;
   detail::HeapMaster<std::pair<K, T>> &_heap;
   sycl::sub_group _gr;
-  sycl::nd_item<1> &_it;
   size_t _ind;
 
   K _empty;
