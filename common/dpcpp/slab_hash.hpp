@@ -114,7 +114,7 @@ public:
   SlabHashTable(K empty, sycl::nd_item<1> &it,
                 SlabHash::AllocAdapter<std::pair<K, T>> &adap)
       : _lists(adap._data), _gr(it.get_sub_group()), _empty(empty),
-         _ind(it.get_local_id()),
+         _ind(it.get_local_id()), _it(it),
         _lock(adap._lock), _heap(adap._heap),  _v(adap.v + it.get_group().get_id()){};
 
 
@@ -284,6 +284,7 @@ private:
   sycl::device_ptr<SlabNode<std::pair<K, T>>> _iter;
   sycl::device_ptr<SlabNode<std::pair<K, T>>> _prev;
   detail::HeapMaster<std::pair<K, T>> &_heap;
+  sycl::nd_item<1> &_it;
   sycl::sub_group _gr;
   size_t _ind;
 
