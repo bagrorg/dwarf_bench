@@ -69,7 +69,7 @@ template <typename T> struct HeapMaster {
   uint32_t _offset;
   sycl::queue &_q;
 };
-} // namespace detail
+}
 
 template <typename T> struct AllocAdapter {
   AllocAdapter(size_t cluster_size, size_t work_size, size_t bucket_size,
