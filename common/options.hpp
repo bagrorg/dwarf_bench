@@ -10,6 +10,9 @@ struct RunOptions {
   size_t iterations = 1;
   std::string root_path;
   std::string report_path;
+
+  int type;
+  int threads_count;
 };
 
 std::istream &operator>>(std::istream &in, RunOptions::DeviceType &dt);

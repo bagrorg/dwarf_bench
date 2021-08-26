@@ -11,26 +11,26 @@ void NestedLoopJoin::_run(const size_t buf_size, Meter &meter) {
   auto opts = meter.opts();
 
   const std::vector<uint32_t> table_a_keys =
-      helpers::make_random<uint32_t>(buf_size);
+      helpers::make_unique_random(buf_size);
   const std::vector<uint32_t> table_a_values =
-      helpers::make_random<uint32_t>(table_a_keys.size());
+      helpers::make_unique_random(table_a_keys.size());
 
   const std::vector<uint32_t> table_b_keys =
-      helpers::make_random<uint32_t>(buf_size);
+      helpers::make_unique_random(buf_size);
   const std::vector<uint32_t> table_b_values =
-      helpers::make_random<uint32_t>(table_b_keys.size());
+      helpers::make_unique_random(table_b_keys.size());
 
   auto sel = get_device_selector(opts);
   sycl::queue q{*sel};
   std::cout << "Selected device: "
             << q.get_device().get_info<sycl::info::device::name>() << "\n";
 
-  std::vector<uint32_t> key_out(buf_size * buf_size, 0);
-  std::vector<uint32_t> val1_out(buf_size * buf_size, -1);
-  std::vector<uint32_t> val2_out(buf_size * buf_size, -1);
+  std::vector<uint32_t> key_out(buf_size, 0);
+  std::vector<uint32_t> val1_out(buf_size, -1);
+  std::vector<uint32_t> val2_out(buf_size, -1);
 
-  auto expected = join_helpers::seq_join(table_a_keys, table_a_values,
-                                         table_b_keys, table_b_values);
+  //auto expected = join_helpers::seq_join(table_a_keys, table_a_values,
+   //                                      table_b_keys, table_b_values);
 
   for (auto it = 0; it < opts.iterations; ++it) {
     std::unique_ptr<Result> result = std::make_unique<Result>();
@@ -57,18 +57,39 @@ void NestedLoopJoin::_run(const size_t buf_size, Meter &meter) {
         auto out_val1_acc = sycl::accessor(out_val1_b, h, sycl::read_write);
         auto out_val2_acc = sycl::accessor(out_val2_b, h, sycl::read_write);
 
-        h.parallel_for<class nested_join>(buf_size, [=](auto &it) {
-          uint32_t key = key_a_acc[it];
-          uint32_t val = val_a_acc[it];
-          for (int i = 0; i < buf_size; i++) {
-            if (key_b_acc[i] == key) {
-              out_key_acc[it * buf_size + i] = key;
-              out_val1_acc[it * buf_size + i] = val;
-              out_val2_acc[it * buf_size + i] = val_b_acc[i];
+        if (opts.type == 0) {
+          h.parallel_for<class nested_join>(buf_size, [=](auto &it) {
+              uint32_t key = key_a_acc[it];
+              uint32_t val = val_a_acc[it];
+              for (int i = 0; i < buf_size; i++) {
+                if (key_b_acc[i] == key) {
+                  out_key_acc[it] = key;
+                  out_val1_acc[it] = val;
+                  out_val2_acc[it] = val_b_acc[i];
+                }
+              }
+            });
+          
+        } else {
+          const int threads_count = opts.threads_count;
+          const int elems_for_thread = ceil((float) buf_size / threads_count);
+          h.parallel_for<class nested_join_alt>(threads_count, [=](auto &j) {
+            for (int it = j * elems_for_thread; it < elems_for_thread * (j + 1) && it < buf_size; it++) {
+              uint32_t key = key_a_acc[it];
+              uint32_t val = val_a_acc[it];
+              for (int i = 0; i < buf_size; i++) {
+                if (key_b_acc[i] == key) {
+                  out_key_acc[it] = key;
+                  out_val1_acc[it] = val;
+                  out_val2_acc[it] = val_b_acc[i];
+                }
+              }
             }
-          }
-        });
-      }).wait();
+            });
+          
+    }}).wait();
+        
+        
       auto host_end = std::chrono::steady_clock::now();
 
       result->host_time = host_end - host_start;
@@ -78,7 +99,7 @@ void NestedLoopJoin::_run(const size_t buf_size, Meter &meter) {
     std::vector<uint32_t> res1;
     std::vector<uint32_t> res2;
 
-    for (int i = 0; i < buf_size * buf_size; i++) {
+    for (int i = 0; i < buf_size; i++) {
       if (key_out[i] != ((uint32_t)0)) {
         res_k.push_back(key_out[i]);
         res1.push_back(val1_out[i]);
@@ -89,12 +110,12 @@ void NestedLoopJoin::_run(const size_t buf_size, Meter &meter) {
     join_helpers::ColJoinedTableTy<uint32_t, uint32_t, uint32_t> output = {
         res_k, {res1, res2}};
 
-    if (output != expected) {
-      std::cerr << "Incorrect results" << std::endl;
-      result->valid = false;
-    }
+    //if (output != expected) {
+    //  std::cerr << "Incorrect results" << std::endl;
+    //  result->valid = false;
+    //}
 
-    DwarfParams params{{"buf_size", std::to_string(buf_size)}};
+    DwarfParams params{{"buf_size", std::to_string(buf_size)}, {"type", std::to_string(opts.type)}, {"threads_count", std::to_string(opts.threads_count)}, {"algo", "nested_loop_join"}};
     meter.add_result(std::move(params), std::move(result));
   }
 }

@@ -32,6 +32,11 @@ int main(int argc, char *argv[]) {
                      "Device to run on.");
   desc.add_options()("report_path", po::value<std::string>(&opts.report_path),
                      "Full/Relative path to a report file.");
+  desc.add_options()("threads_count", po::value<int>(&opts.threads_count),
+                     "Full/Relative path to a report file.");
+  desc.add_options()("type", po::value<int>(&opts.type),
+                     "Full/Relative path to a report file.");
+                     
   po::positional_options_description pos_opts;
   pos_opts.add("dwarf", 1);
 

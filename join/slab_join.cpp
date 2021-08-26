@@ -26,13 +26,13 @@ void SlabJoin::_run(const size_t buf_size, Meter &meter) {
   std::cout << "Selected device: "
             << q.get_device().get_info<sycl::info::device::name>() << "\n";
 
-  auto expected = join_helpers::seq_join(table_a_keys, table_a_values,
-                                         table_b_keys, table_b_values);
+  //auto expected = join_helpers::seq_join(table_a_keys, table_a_values,
+   //                                      table_b_keys, table_b_values);
 
   for (auto it = 0; it < opts.iterations; ++it) {
     int num_of_groups = ceil((float)buf_size / scale);
-    sycl::nd_range<1> r{SlabHash::SUBGROUP_SIZE * num_of_groups,
-                        SlabHash::SUBGROUP_SIZE};
+    sycl::nd_range<1> r{(SlabHash::SUBGROUP_SIZE + 1) * num_of_groups,
+                        SlabHash::SUBGROUP_SIZE + 1};
 
     SlabHash::AllocAdapter<std::pair<uint32_t, uint32_t>> adap(
         SlabHash::CLUSTER_SIZE, num_of_groups, SlabHash::BUCKETS_COUNT,
@@ -75,7 +75,7 @@ void SlabJoin::_run(const size_t buf_size, Meter &meter) {
                // todo: pick smaller one
                for (int i = ind * scale; i < (ind + 1) * scale && i < buf_size;
                     i++) {
-                 ht.insert(key_a_acc[i], val_a_acc[i]);
+                 if (it.get_local_id() != SlabHash::SUBGROUP_SIZE) ht.insert(key_a_acc[i], val_a_acc[i]);
                }
              });
        }).wait();
@@ -99,7 +99,7 @@ void SlabJoin::_run(const size_t buf_size, Meter &meter) {
                SlabHash::SlabHashTable<uint32_t, uint32_t,
                                        SlabHash::DefaultHasher<32, 48, 1031>>
                    ht(SlabHash::EMPTY_UINT32_T, it, *adap_acc.get_pointer());
-
+              if (it.get_local_id() != SlabHash::SUBGROUP_SIZE) {
                for (int i = ind * scale; i < (ind + 1) * scale && i < buf_size;
                     i++) {
                  auto ans = ht.find(key_b_acc[i]);
@@ -110,6 +110,7 @@ void SlabJoin::_run(const size_t buf_size, Meter &meter) {
                    out_val2_a[i] = val_b_acc[i];
                  }
                }
+              }
              });
        }).wait();
       auto host_end = std::chrono::steady_clock::now();
@@ -134,12 +135,12 @@ void SlabJoin::_run(const size_t buf_size, Meter &meter) {
     join_helpers::ColJoinedTableTy<uint32_t, uint32_t, uint32_t> output = {
         res_k, {res1, res2}};
 
-    if (output != expected) {
-      std::cerr << "Incorrect results" << std::endl;
-      result->valid = false;
-    }
+    //if (output != expected) {
+    //  std::cerr << "Incorrect results" << std::endl;
+    //  result->valid = false;
+    //}
 
-    DwarfParams params{{"buf_size", std::to_string(buf_size)}};
+    DwarfParams params{{"buf_size", std::to_string(buf_size)}, {"type", std::to_string(opts.type)}, {"threads_count", std::to_string(opts.threads_count)}, {"algo", "slab_join"}};
     meter.add_result(std::move(params), std::move(result));
     // todo: scale factor?
   }
