@@ -31,6 +31,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
 
     std::vector<uint32_t> output(buf_size, 0);
     std::vector<uint32_t> expected(buf_size, 1);
+    std::unique_ptr<Result> result = std::make_unique<Result>();
 
     {
       sycl::buffer<SlabHash::AllocAdapter<std::pair<uint32_t, uint32_t>>>
@@ -63,7 +64,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
           std::chrono::duration_cast<std::chrono::microseconds>(host_end -
                                                                 host_start)
               .count();
-      std::unique_ptr<Result> result = std::make_unique<Result>();
+      
       result->host_time = host_end - host_start;
 
       sycl::buffer<uint32_t> out_buf(output);
@@ -91,8 +92,9 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
                }
              });
        }).wait();
-
-      out_buf.get_access<sycl::access::mode::read>();
+    }
+      double memory_util = (double) sizeof(uint32_t) * 2 * buf_size / (adap._heap._count * (sizeof(SlabHash::SlabNode<std::pair<uint32_t, uint32_t>>)));
+      std::cout << memory_util << ' ' << adap._heap._count << std::endl;
       if (output != expected) {
         std::cerr << "Incorrect results" << std::endl;
         result->valid = false;
@@ -100,7 +102,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
 
       DwarfParams params{{"buf_size", std::to_string(buf_size)}};
       meter.add_result(std::move(params), std::move(result));
-    }
+    
   }
 }
 

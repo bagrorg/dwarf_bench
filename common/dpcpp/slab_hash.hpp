@@ -28,8 +28,8 @@ constexpr size_t BUCKETS_COUNT = 1024;
 constexpr size_t EMPTY_UINT32_T = std::numeric_limits<uint32_t>::max();
 
 template <size_t A, size_t B, size_t P> struct DefaultHasher {
-  size_t operator()(const uint32_t &k) {
-    return ((A * k + B) % P) % BUCKETS_COUNT;
+  size_t operator()(const uint32_t &k, size_t buckets_count = 8000) {
+    return ((A * k + B) % P) % buckets_count;
   };
 };
 
@@ -61,11 +61,13 @@ template <typename T> struct HeapMaster {
 
   sycl::device_ptr<SlabNode<T>> malloc_node() {
     uint32_t ret_offset = sycl::atomic<uint32_t>(sycl::global_ptr<uint32_t>(&_offset)).fetch_add(1);
+    sycl::atomic<uint32_t>(sycl::global_ptr<uint32_t>(&_count)).fetch_add(1);
     return _heap + ret_offset;
   }
 
   sycl::device_ptr<SlabNode<T>> _heap;
   uint32_t _offset;
+  uint32_t _count = 0;
   sycl::queue &_q;
 };
 } // namespace detail
@@ -73,7 +75,7 @@ template <typename T> struct HeapMaster {
 template <typename T> struct AllocAdapter {
   AllocAdapter(size_t cluster_size, size_t work_size, size_t bucket_size,
                T empty, sycl::queue &q)
-      : _q(q), _heap(cluster_size, q) {
+      : _q(q), _heap(cluster_size, q), buckets_count(bucket_size) {
     sycl::device_ptr<SlabList<T>> _data_tmp =
         sycl::malloc_device<SlabList<T>>(bucket_size, q);
     sycl::device_ptr<uint32_t> _lock_tmp = sycl::malloc_device<uint32_t>(
@@ -96,6 +98,7 @@ template <typename T> struct AllocAdapter {
   sycl::device_ptr<SlabList<T>> _data;
   sycl::device_ptr<uint32_t> _lock;
   detail::HeapMaster<T> _heap;
+  size_t buckets_count;
   sycl::queue &_q;
 };
 
@@ -106,19 +109,19 @@ public:
                 SlabHash::AllocAdapter<std::pair<K, T>> &adap)
       : _lists(adap._data), _gr(it.get_sub_group()), _empty(empty),
          _ind(it.get_local_id()),
-        _lock(adap._lock), _heap(adap._heap){};
+        _lock(adap._lock), _heap(adap._heap), buckets_count(adap.buckets_count) {};
 
   void insert(K key, T val) {
     _key = key;
     _val = val;
 
     if (_ind == 0) {
-      if ((_lists + _hasher(key))->root == nullptr) {
-        alloc_node((_lists + _hasher(key))->root);
+      if ((_lists + _hasher(key, buckets_count))->root == nullptr) {
+        alloc_node((_lists + _hasher(key, buckets_count))->root);
       }
       
     }
-    _iter = (_lists + _hasher(key))->root;
+    _iter = (_lists + _hasher(key, buckets_count))->root;
     sycl::group_barrier(_gr);
 
     while (1) {
@@ -146,7 +149,7 @@ public:
     _key = key;
     _ans = std::nullopt;
 
-    _iter = (_lists + _hasher(key))->root;
+    _iter = (_lists + _hasher(key, buckets_count))->root;
     
     sycl::group_barrier(_gr);
 
@@ -175,7 +178,7 @@ private:
   }
 
   void lock() {
-    auto list_index = _hasher(_key);
+    auto list_index = _hasher(_key, buckets_count);
     while (atomic_ref_device<uint32_t>(
                (*(_lock + (list_index / (UINT32_T_BIT)))))
                .fetch_or(1 << (list_index % (UINT32_T_BIT))) &
@@ -184,7 +187,7 @@ private:
   }
 
   void unlock() {
-    auto list_index = _hasher(_key);
+    auto list_index = _hasher(_key, buckets_count);
     atomic_ref_device<uint32_t>(
         (*(_lock + (list_index / (UINT32_T_BIT)))))
         .fetch_and(~(1 << (list_index % (UINT32_T_BIT))));
@@ -275,6 +278,8 @@ private:
 
   K _key;
   T _val;
+
+  size_t buckets_count;
 
   std::optional<T> _ans;
 };
