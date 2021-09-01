@@ -10,6 +10,9 @@ struct RunOptions {
   size_t iterations = 1;
   std::string root_path;
   std::string report_path;
+
+  size_t buckets_count;
+  size_t scale;
 };
 
 std::istream &operator>>(std::istream &in, RunOptions::DeviceType &dt);
