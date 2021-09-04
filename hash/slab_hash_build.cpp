@@ -94,13 +94,15 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
        }).wait();
     }
       double memory_util = (double) sizeof(uint32_t) * 2 * buf_size / (adap._heap._count * (sizeof(SlabHash::SlabNode<std::pair<uint32_t, uint32_t>>)));
+      double average_slab = (double) buf_size / (SlabHash::SLAB_SIZE * opts.buckets_count);
       //std::cout << memory_util << ' ' << adap._heap._count << std::endl;
       if (output != expected) {
         std::cerr << "Incorrect results" << std::endl;
         result->valid = false;
       }
 
-      DwarfParams params{{"buf_size", std::to_string(buf_size)}};
+      DwarfParams params{{"buf_size", std::to_string(buf_size)}, {"memory_utilization", std::to_string(memory_util)}, {"buckets_count", std::to_string(opts.buckets_count)},
+        {"scale", std::to_string(opts.scale)}};
       meter.add_result(std::move(params), std::move(result));
     
   }

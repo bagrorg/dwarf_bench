@@ -38,12 +38,16 @@ void MeasureResults::write_csv(const std::string &filename) const {
   std::ofstream of(filename, std::ios::app);
   if (of.is_open()) {
     if (!exists)
-      of << "device_type,buf_size_bytes,host_time_ms,kernel_time_ms\n";
+      of << "device_type,buf_size_bytes,host_time_ms,kernel_time_ms,scale,buckets_count,memory_utilization,avg_slab\n";
     for (const auto &res : results_) {
       of << res.params.at("device_type") << ","
-         << std::stoi(res.params.at("buf_size")) * 4 << ",";
+         << std::stoi(res.params.at("buf_size")) * 8 << ",";
       of << res.result->host_time.count() / 1000.0 << ","
-         << ((double)res.result->kernel_time) / (1000.0 * 1000.0) << "\n";
+         << ((double)res.result->kernel_time) / (1000.0 * 1000.0) << ",";
+      of << res.params.at("scale") << ",";
+      of << res.params.at("buckets_count") << ",";
+      of << res.params.at("memory_utilization") << ",";
+      of << res.params.at("avg_slab") << "\n";
     }
   } else {
     throw std::runtime_error("Could not open the file at " + filename);
