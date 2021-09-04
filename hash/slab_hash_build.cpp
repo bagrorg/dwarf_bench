@@ -11,7 +11,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
 
   auto opts = meter.opts();
   const std::vector<uint32_t> host_src =
-      helpers::make_random<uint32_t>(buf_size);
+      helpers::make_unique_random(buf_size);
 
   auto sel = get_device_selector(opts);
   sycl::queue q{*sel};
@@ -49,7 +49,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
                size_t ind = it.get_group().get_id();
 
                SlabHash::SlabHashTable<uint32_t, uint32_t,
-                                       SlabHash::DefaultHasher<5, 11, 1031>>
+                                       SlabHash::DefaultHasher<242792922, 653019598, 2147483647>>
                    ht(SlabHash::EMPTY_UINT32_T, it, *(adap_acc.get_pointer()));
 
                for (int i = ind * scale; i < (ind + 1) * scale && i < buf_size;
@@ -80,7 +80,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
                size_t ind = it.get_group().get_id();
 
                SlabHash::SlabHashTable<uint32_t, uint32_t,
-                                       SlabHash::DefaultHasher<5, 11, 1031>>
+                                       SlabHash::DefaultHasher<242792922, 653019598, 2147483647>>
                    ht(SlabHash::EMPTY_UINT32_T, it, *(adap_acc.get_pointer()));
 
                for (int i = ind * scale; i < (ind + 1) * scale && i < buf_size;
@@ -94,7 +94,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
        }).wait();
     }
       double memory_util = (double) sizeof(uint32_t) * 2 * buf_size / (adap._heap._count * (sizeof(SlabHash::SlabNode<std::pair<uint32_t, uint32_t>>)));
-      std::cout << memory_util << ' ' << adap._heap._count << std::endl;
+      //std::cout << memory_util << ' ' << adap._heap._count << std::endl;
       if (output != expected) {
         std::cerr << "Incorrect results" << std::endl;
         result->valid = false;

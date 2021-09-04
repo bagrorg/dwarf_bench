@@ -23,7 +23,7 @@ constexpr size_t SLAB_SIZE = SLAB_SIZE_MULTIPLIER * SUBGROUP_SIZE;
 
 constexpr size_t CLUSTER_SIZE = 20000;
 
-constexpr size_t BUCKETS_COUNT = 1024;
+constexpr size_t BUCKETS_COUNT = 4096;
 
 constexpr size_t EMPTY_UINT32_T = std::numeric_limits<uint32_t>::max();
 
