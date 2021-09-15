@@ -1,6 +1,7 @@
 #include "slab_hash_build.hpp"
 #include "common/dpcpp/slab_hash.hpp"
 #include <cmath>
+#include <algorithm>
 
 using std::pair;
 
@@ -10,8 +11,12 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
    // todo how to get through options
 
   auto opts = meter.opts();
-  const std::vector<uint32_t> host_src =
-      helpers::make_unique_random(buf_size);
+  std::vector<uint32_t> host_src = helpers::make_unique_random(buf_size);
+
+
+  auto rng = std::default_random_engine {};
+  std::shuffle(std::begin(host_src), std::end(host_src), rng);
+  //std::cout << "CHECK " << host_src[0] << ' ' << host_src[buf_size - 1] << std::endl;
 
   auto sel = get_device_selector(opts);
   sycl::queue q{*sel};
@@ -49,7 +54,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
                size_t ind = it.get_group().get_id();
 
                SlabHash::SlabHashTable<uint32_t, uint32_t,
-                                       SlabHash::DefaultHasher<242792922, 653019598, 2147483647>>
+                                       SlabHash::DefaultHasher<242792921, 653019598, 2147483647>>
                    ht(SlabHash::EMPTY_UINT32_T, it, *(adap_acc.get_pointer()));
 
                for (int i = ind * scale; i < (ind + 1) * scale && i < buf_size;
@@ -80,7 +85,7 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
                size_t ind = it.get_group().get_id();
 
                SlabHash::SlabHashTable<uint32_t, uint32_t,
-                                       SlabHash::DefaultHasher<242792922, 653019598, 2147483647>>
+                                       SlabHash::DefaultHasher<242792921, 653019598, 2147483647>>
                    ht(SlabHash::EMPTY_UINT32_T, it, *(adap_acc.get_pointer()));
 
                for (int i = ind * scale; i < (ind + 1) * scale && i < buf_size;
@@ -102,9 +107,9 @@ void SlabHashBuild::_run(const size_t buf_size, Meter &meter) {
       }
 
       DwarfParams params{{"buf_size", std::to_string(buf_size)}, {"memory_utilization", std::to_string(memory_util)}, {"buckets_count", std::to_string(opts.buckets_count)},
-        {"scale", std::to_string(opts.scale)}};
+        {"scale", std::to_string(opts.scale)}, {"avg_slab", std::to_string(average_slab)}, {"subgroup_size", std::to_string(SlabHash::SUBGROUP_SIZE)}};
       meter.add_result(std::move(params), std::move(result));
-    
+      std::cout << "AVG_SLAB - " << average_slab << ' ' << opts.buckets_count << std::endl;
   }
 }
 

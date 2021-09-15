@@ -17,18 +17,18 @@ using atomic_ref_device =
 
 constexpr size_t UINT32_T_BIT = CHAR_BIT * sizeof(uint32_t);
 
-constexpr size_t SUBGROUP_SIZE = 32;
-constexpr size_t SLAB_SIZE_MULTIPLIER = 16;
+constexpr size_t SUBGROUP_SIZE = 8;
+constexpr size_t SLAB_SIZE_MULTIPLIER = 4;
 constexpr size_t SLAB_SIZE = SLAB_SIZE_MULTIPLIER * SUBGROUP_SIZE;
 
-constexpr size_t CLUSTER_SIZE = 20000;
+constexpr size_t CLUSTER_SIZE = 10000000;
 
 constexpr size_t BUCKETS_COUNT = 4096;
 
 constexpr size_t EMPTY_UINT32_T = std::numeric_limits<uint32_t>::max();
 
 template <size_t A, size_t B, size_t P> struct DefaultHasher {
-  size_t operator()(const uint32_t &k, size_t buckets_count = 8000) {
+  size_t operator()(const uint32_t &k, size_t buckets_count = BUCKETS_COUNT) {
     return ((A * k + B) % P) % buckets_count;
   };
 };
