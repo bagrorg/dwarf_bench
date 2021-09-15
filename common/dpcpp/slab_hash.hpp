@@ -31,11 +31,42 @@ constexpr size_t BUCKETS_COUNT = 1024;
 
 constexpr size_t EMPTY_UINT32_T = std::numeric_limits<uint32_t>::max();
 
+int calculate_buckets_count(size_t input_size, int mem_util) {
+  float avg_bucket = 1.f;
+  switch (mem_util) {
+    case 20:
+      avg_bucket = 0.2;
+      break;
+    case 30:
+      avg_bucket = 0.3;
+      break;
+    case 40:
+      avg_bucket = 0.4;
+      break;
+    case 50:
+      avg_bucket = 0.55;
+      break;
+    case 60:
+      avg_bucket = 0.625;
+      break;
+    case 70:
+      avg_bucket = 0.875;
+      break;
+    case 80:
+      avg_bucket = 1.875;
+      break;
+    default:
+      break;
+  }
+  return (float) input_size / (SLAB_SIZE * avg_bucket);
+}
+
 template <size_t A, size_t B, size_t P> struct DefaultHasher {
-  size_t operator()(const uint32_t &k) {
-    return ((A * k + B) % P) % BUCKETS_COUNT;
+  size_t operator()(const uint32_t &k, int buckets_count = BUCKETS_COUNT) {
+    return ((A * k + B) % P) % buckets_count;
   };
 };
+
 
 template <typename T> struct SlabNode {
   SlabNode(T el) {
@@ -75,16 +106,16 @@ template <typename T> struct HeapMaster {
 } // namespace detail
 
 template <typename T> struct AllocAdapter {
-  AllocAdapter(size_t cluster_size, size_t work_size, size_t bucket_size,
+  AllocAdapter(size_t cluster_size, size_t work_size, size_t buckets_count,
                T empty, sycl::queue &q)
-      : _q(q), _heap(cluster_size, q) {
+      : _q(q), _heap(cluster_size, q), _buckets_count(buckets_count) {
     sycl::device_ptr<SlabList<T>> _data_tmp =
-        sycl::malloc_device<SlabList<T>>(bucket_size, q);
+        sycl::malloc_device<SlabList<T>>(buckets_count, q);
     sycl::device_ptr<uint32_t> _lock_tmp = sycl::malloc_device<uint32_t>(
-        ceil((float)bucket_size / sizeof(uint32_t)), q);
+        ceil((float)buckets_count / sizeof(uint32_t)), q);
     v = sycl::malloc_device<sycl::vec<uint8_t, 16>>(work_size, q);
 
-    q.parallel_for(bucket_size, [=](auto &i) {
+    q.parallel_for(buckets_count, [=](auto &i) {
       *(_data_tmp + i) = SlabList<T>();
       *(_lock_tmp + i) = 0;
     });
@@ -104,6 +135,7 @@ template <typename T> struct AllocAdapter {
   detail::HeapMaster<T> _heap;
 
   sycl::device_ptr<sycl::vec<uint8_t, 16>> v;
+  size_t _buckets_count;
 
   sycl::queue &_q;
 };
@@ -115,7 +147,7 @@ public:
                 SlabHash::AllocAdapter<std::pair<K, T>> &adap)
       : _lists(adap._data), _gr(it.get_sub_group()), _empty(empty),
          _ind(it.get_local_id()), _it(it),
-        _lock(adap._lock), _heap(adap._heap),  _v(adap.v + it.get_group().get_id()){};
+        _lock(adap._lock), _heap(adap._heap),  _v(adap.v + it.get_group().get_id()), _buckets_count(adap._buckets_count) {};
 
 
   void insert(K key, T val) {
@@ -123,12 +155,12 @@ public:
     _val = val;
 
     if (_ind == 0) {
-      if ((_lists + _hasher(key))->root == nullptr) {
-        alloc_node((_lists + _hasher(key))->root);
+      if ((_lists + _hasher(key, _buckets_count))->root == nullptr) {
+        alloc_node((_lists + _hasher(key, _buckets_count))->root);
       }
       
     }
-    _iter = (_lists + _hasher(key))->root;
+    _iter = (_lists + _hasher(key, _buckets_count))->root;
     sycl::group_barrier(_gr);
 
     while (1) {
@@ -156,7 +188,7 @@ public:
     _key = key;
     _ans = std::nullopt;
 
-    _iter = (_lists + _hasher(key))->root;
+    _iter = (_lists + _hasher(key, _buckets_count))->root;
     
     sycl::group_barrier(_gr);
 
@@ -185,7 +217,7 @@ private:
   }
 
   void lock() {
-    auto list_index = _hasher(_key);
+    auto list_index = _hasher(_key, _buckets_count);
     while (atomic_ref_device<uint32_t>(
                (*(_lock + (list_index / (UINT32_T_BIT)))))
                .fetch_or(1 << (list_index % (UINT32_T_BIT))) &
@@ -194,7 +226,7 @@ private:
   }
 
   void unlock() {
-    auto list_index = _hasher(_key);
+    auto list_index = _hasher(_key, _buckets_count);
     atomic_ref_device<uint32_t>(
         (*(_lock + (list_index / (UINT32_T_BIT)))))
         .fetch_and(~(1 << (list_index % (UINT32_T_BIT))));
@@ -290,6 +322,7 @@ private:
 
   K _empty;
   Hash _hasher;
+  size_t _buckets_count;
 
   K _key;
   T _val;
