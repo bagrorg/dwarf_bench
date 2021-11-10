@@ -193,6 +193,24 @@ public:
     return _ans;
   }
 
+  T find_all_and_sum(K key) {
+    _key = key;
+    T ans = 0;
+
+    _iter = (_lists + _hasher(key, _buckets_count))->root;
+    
+    sycl::group_barrier(_gr);
+
+    while (_iter != nullptr) {
+      ans += find_in_node_and_sum();
+      _iter = _iter->next;
+
+      sycl::group_barrier(_gr);
+    }
+
+    return ans;
+  }
+
 private:
   void alloc_node(sycl::device_ptr<SlabNode<std::pair<K, T>>> &src) {
     lock();
@@ -291,6 +309,18 @@ private:
         break;
       }
     }
+  }
+
+  T find_in_node_and_sum() {
+    T local_ans = 0;
+    for (int i = _ind; i < SUBGROUP_SIZE * SLAB_SIZE_MULTIPLIER;
+         i += SUBGROUP_SIZE) {
+      if ((_iter->data[i].first) == _key) {
+        local_ans += _iter->data[i].second;
+      }
+    }
+    sycl::group_barrier(_gr);
+    return local_ans;
   }
 
   sycl::device_ptr<SlabList<std::pair<K, T>>> _lists;

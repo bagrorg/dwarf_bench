@@ -275,6 +275,73 @@ TEST(SlabHash, find_and_insert_together_big) {
   }
 }
 
+TEST(SlabHash, find_all_and_sum_with_insert) {
+  const size_t test_size = 9;
+  std::vector<pair<uint32_t, uint32_t>> testUniv = {
+      {0, 2}, {0, 2}, {1, 3}, {2, 5}, {1, 0}, {3, 10}, {0, 22}, {0, 1}, {3, 5}};
+  std::vector<uint32_t> keysUniv = {0, 1, 2, 3};
+
+  sycl::queue q{sycl::gpu_selector()};
+  sycl::nd_range<1> r_ins{SUBGROUP_SIZE, SUBGROUP_SIZE};
+  sycl::nd_range<1> r_sum{SUBGROUP_SIZE * 4, SUBGROUP_SIZE};
+
+  SlabHash::AllocAdapter<std::pair<uint32_t, uint32_t>> adap(SlabHash::CLUSTER_SIZE, 3,
+        SlabHash::BUCKETS_COUNT, {SlabHash::EMPTY_UINT32_T, 0}, q);
+  std::vector<uint32_t> checks(4);
+
+  {
+
+    sycl::buffer<SlabHash::AllocAdapter<std::pair<uint32_t, uint32_t>>>
+        adap_buf(&adap, sycl::range<1>{1});
+    sycl::buffer<uint32_t> checks_buf(checks);
+    sycl::buffer<pair<uint32_t, uint32_t>> buffTestUniv(testUniv);
+    sycl::buffer<uint32_t> buffKeysUniv(keysUniv);
+
+    q.submit([&](sycl::handler &cgh) {
+       auto tests = sycl::accessor(buffTestUniv, cgh, sycl::read_only);
+       auto accChecks = sycl::accessor(checks_buf, cgh, sycl::write_only);
+       auto adap_acc = sycl::accessor(adap_buf, cgh, sycl::read_write);
+
+       cgh.parallel_for<class insert_test_slab_sum>(
+           r_ins, [=](sycl::nd_item<1> it) [[intel::reqd_sub_group_size(SlabHash::SUBGROUP_SIZE)]] {
+             size_t ind = it.get_group().get_id();
+
+             SlabHashTable<uint32_t, uint32_t, DefaultHasher<13, 24, 343>> ht(
+                 SlabHash::EMPTY_UINT32_T, it, *(adap_acc.get_pointer()));
+
+             for (int i = 0; i < test_size; i++) {
+               ht.insert(tests[i].first, tests[i].second);
+             }
+           });
+     })
+        .wait();
+
+    q.submit([&](sycl::handler &cgh) {
+       auto tests = sycl::accessor(buffKeysUniv, cgh, sycl::read_only);
+       auto accChecks = sycl::accessor(checks_buf, cgh, sycl::write_only);
+       auto adap_acc = sycl::accessor(adap_buf, cgh, sycl::read_write);
+
+       cgh.parallel_for<class find_test_slab_sum>(r_sum, [=](sycl::nd_item<1> it) [[intel::reqd_sub_group_size(SlabHash::SUBGROUP_SIZE)]] {
+         size_t ind = it.get_group().get_id();
+
+         SlabHashTable<uint32_t, uint32_t, DefaultHasher<13, 24, 343>> ht(
+             SlabHash::EMPTY_UINT32_T, it, *(adap_acc.get_pointer()));
+
+         uint32_t gr_ind = tests[ind];
+         auto ans = ht.find_all_and_sum(gr_ind);
+         SlabHash::atomic_ref_device<uint32_t> total_ans_ref(accChecks[gr_ind]);
+            total_ans_ref.fetch_add(ans);
+       });
+     })
+        .wait();
+  }
+
+  EXPECT_EQ(checks[0], 27);
+  EXPECT_EQ(checks[1], 3);
+  EXPECT_EQ(checks[2], 5);
+  EXPECT_EQ(checks[3], 15);
+}
+
 int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
