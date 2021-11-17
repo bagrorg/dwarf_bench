@@ -192,7 +192,7 @@ TEST(HashTable, BigBuild) {
   std::vector<uint32_t> host_src(host_src_tmp.begin(), host_src_tmp.end());
 
   StaticSimpleHasher<buf_size> hasher;
-  size_t bitmask_sz = buf_size + 1;
+  size_t bitmask_sz = buf_size / 32 + 1;
   std::vector<uint32_t> bitmask(bitmask_sz, 0);
   std::vector<uint32_t> data(buf_size, 0);
   std::vector<uint32_t> keys(buf_size, 0);
@@ -223,6 +223,99 @@ TEST(HashTable, BigBuild) {
   std::set<uint32_t> s(data.begin(), data.end());
   std::cout << s.size() << std::endl;
   ASSERT_EQ(s.size(), host_src.size());
+}
+
+TEST(HashTable, GroupByFunctions) {
+  using namespace sycl;
+  gpu_selector sel;
+  queue q{sel};
+
+  constexpr int buf_size = 50;
+  constexpr int groups = 9;
+
+  std::vector<uint32_t> host_src_keys = {
+    0, 1, 2, 0, 3, 4, 0, 5, 0, 1,
+    8, 7, 2, 4, 5, 7, 1, 2, 4, 6,
+    2, 4, 1, 4, 6, 2, 4, 6, 8, 1,
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 1,
+    1, 2, 3, 4, 5, 6, 7, 8, 0, 0
+  };
+  std::vector<uint32_t> host_src_vals = {
+    12, 19, 1, 4, 30, 21, 3, 8, 6, 19,
+    1, 1, 2, 0, 4, 4, 0, 5, 0, 1,
+    0, 1, 2, 0, 3, 4, 0, 5, 0, 1,
+    1, 3, 1, 3, 1, 0, 23, 11, 0, 1,
+    33, 91, 12, 321, 12, 9, 99, 65, 7, 4
+  };
+  std::vector<uint32_t> answers(groups, 0);
+  for (int i = 0; i < buf_size; i++) {
+    answers[host_src_keys[i]] += host_src_vals[i];
+  }
+
+
+  StaticSimpleHasher<buf_size> hasher;
+  size_t bitmask_sz = buf_size / 32 + 1;
+  std::vector<uint32_t> bitmask(bitmask_sz, 0);
+  std::vector<uint32_t> data(buf_size, 0);
+  std::vector<uint32_t> data_answers(groups, 0);
+  std::vector<uint32_t> keys(buf_size, -1);
+
+  {
+    sycl::buffer<uint32_t> bitmask_buf(bitmask);
+    sycl::buffer<uint32_t> data_buf(data);
+    sycl::buffer<uint32_t> keys_buf(keys);
+    sycl::buffer<uint32_t> src_keys(host_src_keys);
+    sycl::buffer<uint32_t> src_vals(host_src_vals);
+    sycl::buffer<uint32_t> data_ans(data_answers);
+
+    q.submit([&](sycl::handler &h) {
+       auto sk = sycl::accessor(src_keys, h, sycl::read_write);
+       auto sv = sycl::accessor(src_vals, h, sycl::read_write);
+
+       auto bitmask_acc = sycl::accessor(bitmask_buf, h, sycl::read_write);
+       auto data_acc = sycl::accessor(data_buf, h, sycl::read_write);
+       auto keys_acc = sycl::accessor(keys_buf, h, sycl::read_write);
+
+       h.parallel_for<class hash_group_by_build_test>(buf_size, [=](auto &idx) {
+         SimpleNonOwningHashTableForGroupBy<uint32_t, uint32_t,
+                                  StaticSimpleHasher<buf_size>>
+             ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher, -1);
+         ht.insert_group_by(sk[idx], sv[idx]);
+       });
+     }).wait();
+    }
+  {
+    sycl::buffer<uint32_t> bitmask_buf(bitmask);
+    sycl::buffer<uint32_t> data_buf(data);
+    sycl::buffer<uint32_t> keys_buf(keys);
+    sycl::buffer<uint32_t> src_keys(host_src_keys);
+    sycl::buffer<uint32_t> src_vals(host_src_vals);
+    sycl::buffer<uint32_t> data_ans(data_answers);
+
+     q.submit([&](sycl::handler &h) {
+       auto sk = sycl::accessor(src_keys, h, sycl::read_write);
+       auto sv = sycl::accessor(src_vals, h, sycl::read_write);
+
+       auto bitmask_acc = sycl::accessor(bitmask_buf, h, sycl::read_write);
+       auto data_acc = sycl::accessor(data_buf, h, sycl::read_write);
+       auto keys_acc = sycl::accessor(keys_buf, h, sycl::read_write);
+       auto data_ans_acc = sycl::accessor(data_ans, h, sycl::read_write);
+
+       h.parallel_for<class hash_group_by_lookup_test>(buf_size, [=](auto &idx) {
+         SimpleNonOwningHashTableForGroupBy<uint32_t, uint32_t,
+                                  StaticSimpleHasher<buf_size>>
+             ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher, -1);
+         
+         std::pair<uint32_t, bool> ans = ht.at(sk[idx]);
+         sycl::atomic<uint32_t>(
+           data_ans_acc.get_pointer() + sk[idx]).store(ans.first);
+       });
+     }).wait();
+  }
+
+  for (int i = 0; i < groups; i++ ) {
+    ASSERT_EQ(data_answers[i], answers[i]);
+  }
 }
 
 int main(int argc, char **argv) {
