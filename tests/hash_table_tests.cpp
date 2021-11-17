@@ -192,7 +192,7 @@ TEST(HashTable, BigBuild) {
   std::vector<uint32_t> host_src(host_src_tmp.begin(), host_src_tmp.end());
 
   StaticSimpleHasher<buf_size> hasher;
-  size_t bitmask_sz = (buf_size / 32) ? (buf_size / 32) : 1;
+  size_t bitmask_sz = buf_size + 1;
   std::vector<uint32_t> bitmask(bitmask_sz, 0);
   std::vector<uint32_t> data(buf_size, 0);
   std::vector<uint32_t> keys(buf_size, 0);
@@ -215,7 +215,6 @@ TEST(HashTable, BigBuild) {
                                   StaticSimpleHasher<buf_size>>
              ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(),
                 bitmask_acc.get_pointer(), hasher);
-
          ht.insert(s[idx], s[idx]);
        });
      }).wait();
