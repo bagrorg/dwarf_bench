@@ -9,6 +9,7 @@
 #include "hash/slab_hash_build.hpp"
 #include "probe/slab_probe.hpp"
 #include "join/slab_join.hpp"
+#include "groupby/groupby.hpp"
 #include "join/nested_join.hpp"
 
 void populate_registry() {
@@ -27,6 +28,7 @@ void populate_registry() {
   registry->registerd(new NestedLoopJoin());
   registry->registerd(new SlabJoin());
   registry->registerd(new SlabProbe());
+  registry->registerd(new GroupBy());
 #ifdef CUDA_ENABLED
   registry->registerd(new ConstantExampleDPCPPCuda());
   registry->registerd(new DPLScanCuda());

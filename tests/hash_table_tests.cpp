@@ -225,7 +225,7 @@ TEST(HashTable, BigBuild) {
   ASSERT_EQ(s.size(), host_src.size());
 }
 
-TEST(HashTable, GroupByFunctions) {
+TEST(GroupByHashTable, GroupByFunctions) {
   using namespace sycl;
   gpu_selector sel;
   queue q{sel};
@@ -253,7 +253,7 @@ TEST(HashTable, GroupByFunctions) {
   }
 
 
-  StaticSimpleHasher<buf_size> hasher;
+  PolynomialHasher hasher(buf_size);
   size_t bitmask_sz = buf_size / 32 + 1;
   std::vector<uint32_t> bitmask(bitmask_sz, 0);
   std::vector<uint32_t> data(buf_size, 0);
@@ -278,7 +278,7 @@ TEST(HashTable, GroupByFunctions) {
 
        h.parallel_for<class hash_group_by_build_test>(buf_size, [=](auto &idx) {
          SimpleNonOwningHashTableForGroupBy<uint32_t, uint32_t,
-                                  StaticSimpleHasher<buf_size>>
+                                  PolynomialHasher>
              ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher, -1);
          ht.insert_group_by(sk[idx], sv[idx]);
        });
@@ -303,7 +303,7 @@ TEST(HashTable, GroupByFunctions) {
 
        h.parallel_for<class hash_group_by_lookup_test>(buf_size, [=](auto &idx) {
          SimpleNonOwningHashTableForGroupBy<uint32_t, uint32_t,
-                                  StaticSimpleHasher<buf_size>>
+                                  PolynomialHasher>
              ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher, -1);
          
          std::pair<uint32_t, bool> ans = ht.at(sk[idx]);

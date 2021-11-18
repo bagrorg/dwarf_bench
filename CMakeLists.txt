@@ -48,6 +48,7 @@ add_subdirectory(reduce)
 add_subdirectory(hash)
 add_subdirectory(join)
 add_subdirectory(probe)
+add_subdirectory(groupby)
 
 set(bench_libs 
   common
@@ -70,6 +71,7 @@ if(ENABLE_DPCPP)
     nested_loop_join
     join_helpers_lib
     join
+    groupby
   )
   if(ENABLE_CUDA)
   list(APPEND bench_libs
