@@ -19,11 +19,13 @@ public:
     return {pos, true};
   }
 
-  std::pair<uint32_t, bool> insert_group_by(Key key, T val, const sycl::stream & s) {
+  std::pair<uint32_t, bool> insert_group_by(Key key, T val,
+                                            const sycl::stream &s) {
     uint32_t pos = update_bitmask_group_by(key, s);
     sycl::atomic<uint32_t>(_keys + pos).store(key);
     sycl::atomic<uint32_t>(_vals + pos).fetch_add(val);
-    s << key << ' ' << val << ' ' << pos << ' ' << _vals[pos] << ' ' << _hasher(key) << sycl::endl;
+    s << key << ' ' << val << ' ' << pos << ' ' << _vals[pos] << ' '
+      << _hasher(key) << sycl::endl;
     // todo
     return {pos, true};
   }
@@ -97,7 +99,7 @@ private:
     }
   }
 
-  uint32_t update_bitmask_group_by(Key key, const sycl::stream & s) {
+  uint32_t update_bitmask_group_by(Key key, const sycl::stream &s) {
     uint32_t at = _hasher(key);
     uint32_t major_idx = at / elem_sz;
     uint8_t minor_idx = at % elem_sz;
@@ -106,17 +108,19 @@ private:
       uint32_t mask = uint32_t(1) << minor_idx;
       uint32_t present =
           sycl::atomic<uint32_t>(_bitmask + major_idx).fetch_or(mask);
-      s << !(present & mask) << ' ' << key << ' ' << _keys[major_idx * elem_sz + minor_idx] << sycl::endl;
+      s << !(present & mask) << ' ' << key << ' '
+        << _keys[major_idx * elem_sz + minor_idx] << sycl::endl;
       if (!(present & mask)) {
         return major_idx * elem_sz + minor_idx;
       }
-      auto cur_k = sycl::atomic<uint32_t>(_keys + (major_idx * elem_sz + minor_idx)).load(); 
+      auto cur_k =
+          sycl::atomic<uint32_t>(_keys + (major_idx * elem_sz + minor_idx))
+              .load();
       if (cur_k == key) {
         return major_idx * elem_sz + minor_idx;
       } else {
-
       }
-      
+
       if (1 + minor_idx == elem_sz) {
         major_idx = (++major_idx) % _size;
         minor_idx = 0;
@@ -127,14 +131,15 @@ private:
   }
 };
 
-template <class Key, class T, class Hash> class SimpleNonOwningHashTableForGroupBy {
+template <class Key, class T, class Hash>
+class SimpleNonOwningHashTableForGroupBy {
 public:
-  explicit SimpleNonOwningHashTableForGroupBy(size_t size, sycl::global_ptr<Key> keys,
-                                    sycl::global_ptr<T> vals,
-                                    Hash hash,
-                                    Key empty_key)
-      : _keys(keys), _vals(vals), _size(size),
-        _hasher(hash), _empty_key(empty_key) {}
+  explicit SimpleNonOwningHashTableForGroupBy(size_t size,
+                                              sycl::global_ptr<Key> keys,
+                                              sycl::global_ptr<T> vals,
+                                              Hash hash, Key empty_key)
+      : _keys(keys), _vals(vals), _size(size), _hasher(hash),
+        _empty_key(empty_key) {}
 
   bool insert_group_by(Key key, T val) {
     bool pos = update_bitmask_group_by(key, val);
@@ -152,7 +157,7 @@ public:
       pos = (++pos) % _size;
       if (pos == _hasher(key))
         break;
-      
+
       present = !(_keys[pos] == _empty_key);
     }
 
@@ -173,13 +178,13 @@ private:
 
     while (true) {
       Key expected_key = _empty_key;
-      bool success =
-          sycl::atomic<uint32_t>(_keys + at).compare_exchange_strong(expected_key, key);
+      bool success = sycl::atomic<uint32_t>(_keys + at)
+                         .compare_exchange_strong(expected_key, key);
       if (success || expected_key == key) {
         sycl::atomic<uint32_t>(_vals + at).fetch_add(val);
         return true;
       }
-      
+
       at = (at + 1) % _size;
       if (at == _hasher(key)) {
         return false;

@@ -1,6 +1,6 @@
 #include "groupby.hpp"
-#include <limits>
 #include "common/dpcpp/hashtable.hpp"
+#include <limits>
 
 GroupBy::GroupBy() : Dwarf("GroupBy") {}
 void GroupBy::_run(const size_t buf_size, Meter &meter) {
@@ -9,12 +9,12 @@ void GroupBy::_run(const size_t buf_size, Meter &meter) {
   auto opts = meter.opts();
   const std::vector<uint32_t> host_src_vals =
       helpers::make_random<uint32_t>(buf_size);
-  const std::vector<uint32_t> host_src_keys = 
+  const std::vector<uint32_t> host_src_keys =
       helpers::make_random<uint32_t>(buf_size, 0, groups_count - 1);
 
   std::vector<uint32_t> expected(groups_count);
   for (int i = 0; i < buf_size; i++) {
-      expected[host_src_keys[i]] += host_src_vals[i];
+    expected[host_src_keys[i]] += host_src_vals[i];
   }
 
   auto sel = get_device_selector(opts);
@@ -28,12 +28,11 @@ void GroupBy::_run(const size_t buf_size, Meter &meter) {
     std::vector<uint32_t> data(buf_size, 0);
     std::vector<uint32_t> keys(buf_size, empty_element);
     std::vector<uint32_t> output(groups_count, 0);
-    
+
     sycl::buffer<uint32_t> data_buf(data);
     sycl::buffer<uint32_t> keys_buf(keys);
     sycl::buffer<uint32_t> src_vals(host_src_vals);
     sycl::buffer<uint32_t> src_keys(host_src_keys);
-    
 
     auto host_start = std::chrono::steady_clock::now();
     q.submit([&](sycl::handler &h) {
@@ -44,8 +43,10 @@ void GroupBy::_run(const size_t buf_size, Meter &meter) {
        auto keys_acc = keys_buf.get_access(h);
 
        h.parallel_for<class hash_build>(buf_size, [=](auto &idx) {
-         SimpleNonOwningHashTableForGroupBy<uint32_t, uint32_t, PolynomialHasher> ht(
-             buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher, empty_element);
+         SimpleNonOwningHashTableForGroupBy<uint32_t, uint32_t,
+                                            PolynomialHasher>
+             ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(),
+                hasher, empty_element);
 
          ht.insert_group_by(sk[idx], sv[idx]);
        });
@@ -62,11 +63,14 @@ void GroupBy::_run(const size_t buf_size, Meter &meter) {
        auto keys_acc = keys_buf.get_access(h);
 
        h.parallel_for<class hash_build_check>(buf_size, [=](auto &idx) {
-         SimpleNonOwningHashTableForGroupBy<uint32_t, uint32_t, PolynomialHasher> ht(
-             buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher, empty_element);
-         
+         SimpleNonOwningHashTableForGroupBy<uint32_t, uint32_t,
+                                            PolynomialHasher>
+             ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(),
+                hasher, empty_element);
+
          std::pair<uint32_t, bool> sum_for_group = ht.at(sk[idx]);
-         sycl::atomic<uint32_t>(o.get_pointer() + sk[idx]).store(sum_for_group.first);
+         sycl::atomic<uint32_t>(o.get_pointer() + sk[idx])
+             .store(sum_for_group.first);
        });
      }).wait();
     auto host_end = std::chrono::steady_clock::now();
