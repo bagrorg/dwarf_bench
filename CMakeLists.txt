@@ -78,6 +78,7 @@ if(ENABLE_DPCPP)
     cuckoo_hash_build
     join
     groupby
+    hash_build_non_bitmask
   )
   if(ENABLE_CUDA)
   list(APPEND bench_libs
