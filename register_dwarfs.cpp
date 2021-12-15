@@ -4,6 +4,7 @@
 #include "groupby/groupby.hpp"
 #include "hash/cuckoo_hash_build.hpp"
 #include "hash/hash_build.hpp"
+#include "hash/hash_build_non_bitmask.hpp"
 #include "hash/slab_hash_build.hpp"
 #include "join/nested_join.hpp"
 #include "join/slab_join.hpp"
@@ -11,7 +12,6 @@
 #include "radix/radix.hpp"
 #include "reduce/reduce.hpp"
 #include "scan/scan.hpp"
-#include "hash/hash_build_non_bitmask.hpp"
 
 void populate_registry() {
   auto registry = Registry::instance();
