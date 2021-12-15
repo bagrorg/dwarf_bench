@@ -265,7 +265,7 @@ TEST(GroupByHashTable, GroupByFunctions) {
        auto keys_acc = sycl::accessor(keys_buf, h, sycl::read_write);
 
        h.parallel_for<class hash_group_by_build_test>(buf_size, [=](auto &idx) {
-         NonOwningHashTableNonBitmask<uint32_t, uint32_t, PolynomialHasher> ht(
+         NonOwningHashTableWithAdding<uint32_t, uint32_t, PolynomialHasher> ht(
              buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher,
              -1);
          ht.add(sk[idx], sv[idx]);
@@ -289,7 +289,7 @@ TEST(GroupByHashTable, GroupByFunctions) {
 
        h.parallel_for<class hash_group_by_lookup_test>(
            buf_size, [=](auto &idx) {
-             NonOwningHashTableNonBitmask<uint32_t, uint32_t, PolynomialHasher>
+             NonOwningHashTableWithAdding<uint32_t, uint32_t, PolynomialHasher>
                  ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(),
                     hasher, -1);
 

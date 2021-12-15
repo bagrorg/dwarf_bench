@@ -7,15 +7,17 @@ find_package(CUDA)
 
 option(ENABLE_DPCPP ON)
 option(ENABLE_CUDA OFF)
-option(EXPLICIT_DPL OFF)
 option(ENABLE_EXAMPLES ON)
 
+option(ENABLE_EXPERIMENTAL OFF)
+
 if(ENABLE_DPCPP)
-  if(EXPLICIT_DPL)
-    find_package(oneDPL REQUIRED)
-    find_package(TBB REQUIRED)
-  endif()
+  find_package(oneDPL REQUIRED)
+  find_package(TBB REQUIRED)
   add_definitions(-DDPCPP_ENABLED)  
+  if(ENABLE_EXPERIMENTAL)
+    add_definitions(-DEXPERIMENTAL)
+  endif()
 endif()
 
 if(CUDA_FOUND AND ENABLE_CUDA)
@@ -70,16 +72,19 @@ if(ENABLE_DPCPP)
     radix
     reduce
     hash_build
-    slab_hash_build
-    slab_join
-    slab_probe
     nested_loop_join
     join_helpers_lib
     cuckoo_hash_build
     join
     groupby
-    hash_build_non_bitmask
   )
+  if(ENABLE_EXPERIMENTAL)
+    list(APPEND bench_libs
+      slab_hash_build
+      slab_join
+      slab_probe
+    )
+  endif()
   if(ENABLE_CUDA)
   list(APPEND bench_libs
       dpcpp_constant_cuda

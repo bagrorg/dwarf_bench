@@ -78,7 +78,8 @@ private:
       }
 
       minor_idx++;
-      uint32_t occupied = sycl::intel::ctz<uint32_t>(~(present >> minor_idx));
+      uint32_t occupied =
+          sycl::ext::intel::ctz<uint32_t>(~(present >> minor_idx));
       if (occupied + minor_idx == elem_sz) {
         major_idx = (++major_idx) % _size;
         minor_idx = 0;
@@ -89,9 +90,9 @@ private:
   }
 };
 
-template <class Key, class T, class Hash> class NonOwningHashTableNonBitmask {
+template <class Key, class T, class Hash> class NonOwningHashTableWithAdding {
 public:
-  explicit NonOwningHashTableNonBitmask(size_t size, sycl::global_ptr<Key> keys,
+  explicit NonOwningHashTableWithAdding(size_t size, sycl::global_ptr<Key> keys,
                                         sycl::global_ptr<T> vals, Hash hash,
                                         Key empty_key)
       : _keys(keys), _vals(vals), _size(size), _hasher(hash),
@@ -123,24 +124,6 @@ public:
     }
 
     return {{}, false};
-  }
-
-  bool has(const Key &key) const {
-    uint32_t pos = _hasher(key);
-    const auto start = pos;
-    bool present = !(_keys[pos] == _empty_key);
-    while (present) {
-      if (_keys[pos] == key)
-        return true;
-
-      pos = (++pos) % _size;
-      if (pos == start)
-        break;
-
-      present = !(_keys[pos] == _empty_key);
-    }
-
-    return false;
   }
 
 private:

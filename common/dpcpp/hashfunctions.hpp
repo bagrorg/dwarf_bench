@@ -45,7 +45,7 @@ template <class Integral> struct SimpleHasher {
   size_t operator()(const Integral &v) const { return v % _sz; }
 
 private:
-  size_t _sz;
+  const size_t _sz;
 };
 
 struct SimpleHasherWithOffset {
