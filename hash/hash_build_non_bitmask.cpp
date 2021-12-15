@@ -34,9 +34,10 @@ void HashBuildNonBitmask::_run(const size_t buf_size, Meter &meter) {
        auto keys_acc = keys_buf.get_access(h);
 
        h.parallel_for<class hash_build>(buf_size, [=](auto &idx) {
-         NonOwningHashTableNonBitmask<uint32_t, uint32_t, SimpleHasher<uint32_t>>
-             ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher,
-             empty_element);
+         NonOwningHashTableNonBitmask<uint32_t, uint32_t,
+                                      SimpleHasher<uint32_t>>
+             ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(),
+                hasher, empty_element);
 
          ht.insert(s[idx], s[idx]);
        });
@@ -58,9 +59,10 @@ void HashBuildNonBitmask::_run(const size_t buf_size, Meter &meter) {
        auto keys_acc = keys_buf.get_access(h);
 
        h.parallel_for<class hash_build_check>(buf_size, [=](auto &idx) {
-         NonOwningHashTableNonBitmask<uint32_t, uint32_t, SimpleHasher<uint32_t>> ht(
-             buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher,
-             empty_element);
+         NonOwningHashTableNonBitmask<uint32_t, uint32_t,
+                                      SimpleHasher<uint32_t>>
+             ht(buf_size, keys_acc.get_pointer(), data_acc.get_pointer(),
+                hasher, empty_element);
 
          o[idx] = ht.has(s[idx]);
        });
