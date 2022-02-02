@@ -13,12 +13,12 @@ void Join::_run(const size_t buf_size, Meter &meter) {
   const std::vector<uint32_t> table_a_keys =
       helpers::make_unique_random(buf_size);
   const std::vector<uint32_t> table_a_values =
-      helpers::make_unique_random(table_a_keys.size());
+      helpers::make_random<uint32_t>(table_a_keys.size());
 
   const std::vector<uint32_t> table_b_keys =
       helpers::make_unique_random(buf_size);
   const std::vector<uint32_t> table_b_values =
-      helpers::make_unique_random(table_b_keys.size());
+      helpers::make_random<uint32_t>(table_b_keys.size());
 
   auto sel = get_device_selector(opts);
   sycl::queue q{*sel};
@@ -67,9 +67,9 @@ void Join::_run(const size_t buf_size, Meter &meter) {
          auto keys_acc = keys_buf.get_access(h);
 
          h.parallel_for<class join_build>(buf_size, [=](auto &idx) {
-           SimpleNonOwningHashTable<uint32_t, uint32_t, SimpleHasher<uint32_t>>
-               ht(ht_size, keys_acc.get_pointer(), data_acc.get_pointer(),
-                  bitmask_acc.get_pointer(), hasher);
+           NonOwningHashTableNonBitmask<uint32_t, uint32_t, SimpleHasher<uint32_t>> ht(
+             buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher,
+             empty_element);
 
            ht.insert(key_a_acc[idx], val_a_acc[idx]);
          });
@@ -91,9 +91,9 @@ void Join::_run(const size_t buf_size, Meter &meter) {
          auto keys_acc = keys_buf.get_access(h);
 
          h.parallel_for<class join_probe>(buf_size, [=](auto &idx) {
-           SimpleNonOwningHashTable<uint32_t, uint32_t, SimpleHasher<uint32_t>>
-               ht(ht_size, keys_acc.get_pointer(), data_acc.get_pointer(),
-                  bitmask_acc.get_pointer(), hasher);
+           NonOwningHashTableNonBitmask<uint32_t, uint32_t, SimpleHasher<uint32_t>> ht(
+             buf_size, keys_acc.get_pointer(), data_acc.get_pointer(), hasher,
+             empty_element);
            auto ans = ht.at(key_b_acc[idx]);
            if (ans.second) {
              out_key_acc[idx] = key_b_acc[idx];
@@ -127,8 +127,8 @@ void Join::_run(const size_t buf_size, Meter &meter) {
           res_k, {res_present, res_val}};
 
       if (output != expected) {
-        std::cerr << "Incorrect results" << std::endl;
-        result->valid = false;
+       std::cerr << "Incorrect results" << std::endl;
+       result->valid = false;
       }
     }
 
