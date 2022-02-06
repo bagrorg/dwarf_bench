@@ -14,13 +14,13 @@ int main(int argc, char *argv[]) {
   auto registry = Registry::instance();
   namespace po = boost::program_options;
 
-  RunOptions opts;
+  std::unique_ptr<RunOptions> opts = std::make_unique<RunOptions>();
   size_t groups_count = 1;
   size_t executors = 1;
 
-  opts.root_path = helpers::get_kernels_root_env(argv[0]);
+  opts->root_path = helpers::get_kernels_root_env(argv[0]);
   std::cout
-      << "DWARF_BENCH_ROOT is set to " << opts.root_path << std::endl
+      << "DWARF_BENCH_ROOT is set to " << opts->root_path << std::endl
       << "You can change that with 'export DWARF_BENCH_ROOT=/your/path'\n";
 
   Dwarf *dwarf;
@@ -31,14 +31,14 @@ int main(int argc, char *argv[]) {
                      "Dwarf to run. List all with 'list' option.");
   desc.add_options()(
       "input_size",
-      po::value<std::vector<size_t>>(&opts.input_size)->multitoken(),
+      po::value<std::vector<size_t>>(&opts->input_size)->multitoken(),
       "Data array size, ususally a column size in elements");
-  desc.add_options()("iterations", po::value<size_t>(&opts.iterations),
+  desc.add_options()("iterations", po::value<size_t>(&opts->iterations),
                      "Number of iterations to run a bmark.");
   desc.add_options()("device",
-                     po::value<RunOptions::DeviceType>(&opts.device_ty),
+                     po::value<RunOptions::DeviceType>(&opts->device_ty),
                      "Device to run on.");
-  desc.add_options()("report_path", po::value<std::string>(&opts.report_path),
+  desc.add_options()("report_path", po::value<std::string>(&opts->report_path),
                      "Full/Relative path to a report file.");
   desc.add_options()(
       "groups_count", po::value<size_t>(&groups_count),
@@ -76,22 +76,22 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    if (opts.input_size.empty()) {
-      opts.input_size.push_back(1);
+    if (opts->input_size.empty()) {
+      opts->input_size.push_back(1);
     }
 
-    helpers::set_dpcpp_filter_env(opts);
+    helpers::set_dpcpp_filter_env(*opts);
 
     if (isGroupBy(dwarf_name)) {
-      GroupByRunOptions group_by_opts(opts, groups_count, executors);
-      dwarf->init(group_by_opts);
-      dwarf->run(group_by_opts);
-      dwarf->report(group_by_opts);
-    } else {
-      dwarf->init(opts);
-      dwarf->run(opts);
-      dwarf->report(opts);
+      std::unique_ptr<GroupByRunOptions> tmpPtr = std::make_unique<GroupByRunOptions>(*opts, groups_count, executors);
+      opts.reset();
+      opts = std::move(tmpPtr);
     }
+
+    dwarf->init(std::move(opts));
+    dwarf->run();
+    dwarf->report();
+
   } catch (std::exception &e) {
     std::cerr << "Caught exception: " << e.what() << std::endl;
   }

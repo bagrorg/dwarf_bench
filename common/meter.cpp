@@ -12,5 +12,8 @@ void Meter::add_result(DwarfParams &&params, std::unique_ptr<Result> result) {
 
 void Meter::set_params(DwarfParams params) { params_ = params; }
 
-void Meter::set_opts(const RunOptions &opts) { opts_ = &opts; }
-const RunOptions &Meter::opts() const { return *opts_; }
+void Meter::set_opts(std::unique_ptr<RunOptions> opts) { 
+  opts_ = std::shared_ptr<RunOptions>(std::move(opts)); 
+}
+
+std::shared_ptr<RunOptions> Meter::opts() const { return opts_; }
