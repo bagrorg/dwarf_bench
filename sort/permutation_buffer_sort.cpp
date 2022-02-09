@@ -33,9 +33,9 @@ void PermutationBufferSort::_run(const size_t buf_size, Meter &meter) {
   const std::vector<int> expected = expected_out(host_src);
 
   for (auto it = 0; it < opts.iterations; ++it) {
-    auto host_start = std::chrono::steady_clock::now();
     std::vector<size_t> permutation_buffer(buf_size);
     std::iota(permutation_buffer.begin(), permutation_buffer.end(), 0);
+    auto host_start = std::chrono::steady_clock::now();
     oneapi::tbb::parallel_sort(permutation_buffer.begin(), permutation_buffer.end(),
         [&host_src](size_t left, size_t right) {
             return host_src[left] < host_src[right];
@@ -48,7 +48,7 @@ void PermutationBufferSort::_run(const size_t buf_size, Meter &meter) {
 
     std::unique_ptr<Result> result = std::make_unique<Result>();
     result->host_time = host_end - host_start;
-    DwarfParams params{{"buf_size", std::to_string(buf_size)}};
+    DwarfParams params{{"buf_size", std::to_string(buf_size / 1024)}};
 
     {
       if (!helpers::check_first(host_src, expected, expected.size())) {
