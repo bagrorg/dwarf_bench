@@ -13,9 +13,9 @@
 #include "probe/slab_probe.hpp"
 #include "reduce/reduce.hpp"
 #include "scan/scan.hpp"
+#include "sort/permutation_buffer_sort.hpp"
 #include "sort/radix.hpp"
 #include "sort/tbbsort.hpp"
-#include "sort/permutation_buffer_sort.hpp"
 
 void populate_registry() {
   auto registry = Registry::instance();

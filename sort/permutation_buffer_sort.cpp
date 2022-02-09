@@ -9,23 +9,25 @@ template <typename T> std::vector<T> expected_out(const std::vector<T> &v) {
   return out;
 }
 
-void in_place_permutation(std::vector<int> &v, std::vector<size_t> &permutation) {
-    for (size_t i = 0; i < v.size(); i++) {
-        int current = i;
-        int next = permutation[i];
+void in_place_permutation(std::vector<int> &v,
+                          std::vector<size_t> &permutation) {
+  for (size_t i = 0; i < v.size(); i++) {
+    int current = i;
+    int next = permutation[i];
 
-        while (next != i) {
-            std::swap(v[current], v[next]);
-            permutation[current] = current;
-            current = next;
-            next = permutation[current];
-        }
-        permutation[current] = current;
+    while (next != i) {
+      std::swap(v[current], v[next]);
+      permutation[current] = current;
+      current = next;
+      next = permutation[current];
     }
+    permutation[current] = current;
+  }
 }
 } // namespace
 
-PermutationBufferSort::PermutationBufferSort() : Dwarf("PermutationBufferSort") {}
+PermutationBufferSort::PermutationBufferSort()
+    : Dwarf("PermutationBufferSort") {}
 
 void PermutationBufferSort::_run(const size_t buf_size, Meter &meter) {
   auto opts = meter.opts();
@@ -36,10 +38,11 @@ void PermutationBufferSort::_run(const size_t buf_size, Meter &meter) {
     std::vector<size_t> permutation_buffer(buf_size);
     std::iota(permutation_buffer.begin(), permutation_buffer.end(), 0);
     auto host_start = std::chrono::steady_clock::now();
-    oneapi::tbb::parallel_sort(permutation_buffer.begin(), permutation_buffer.end(),
-        [&host_src](size_t left, size_t right) {
-            return host_src[left] < host_src[right];
-    });
+    oneapi::tbb::parallel_sort(permutation_buffer.begin(),
+                               permutation_buffer.end(),
+                               [&host_src](size_t left, size_t right) {
+                                 return host_src[left] < host_src[right];
+                               });
     in_place_permutation(host_src, permutation_buffer);
     auto host_end = std::chrono::steady_clock::now();
     auto host_exe_time = std::chrono::duration_cast<std::chrono::microseconds>(
