@@ -15,6 +15,7 @@
 #include "scan/scan.hpp"
 #include "sort/radix.hpp"
 #include "sort/tbbsort.hpp"
+#include "sort/permutation_buffer_sort.hpp"
 
 void populate_registry() {
   auto registry = Registry::instance();
@@ -22,6 +23,7 @@ void populate_registry() {
   registry->registerd(new ConstantExample());
   registry->registerd(new ConstantExampleCAPI());
   registry->registerd(new TBBSort());
+  registry->registerd(new PermutationBufferSort());
 
 #ifdef DPCPP_ENABLED
   registry->registerd(new ConstantExampleDPCPP());
