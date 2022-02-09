@@ -62,6 +62,7 @@ set(bench_libs
   standalone_scan
   constant
   tbbsort
+  permutation_buffer_sort
 )
 
 if(ENABLE_DPCPP)
