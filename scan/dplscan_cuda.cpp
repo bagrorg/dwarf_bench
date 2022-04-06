@@ -63,18 +63,19 @@ void DPLScanCuda::run_scan(const size_t buf_size, Meter &meter) {
       dump_collection(expected);
     }
 #endif
-    Result result;
-    result.host_time = host_end - host_start;
-    DwarfParams params{{"buf_size", std::to_string(buffer_size)}};
-    meter.add_result(std::move(params), std::move(result));
+    std::unique_ptr<Result> result = std::make_unique<Result>();
+    result->host_time = host_end - host_start;
 
     {
       sycl::host_accessor res(out_buf, sycl::read_only);
       if (!helpers::check_first(res, expected, expected.size())) {
         std::cerr << "incorrect results" << std::endl;
-        result.valid = false;
+        result->valid = false;
       }
     }
+
+    DwarfParams params{{"buf_size", std::to_string(buffer_size)}};
+    meter.add_result(std::move(params), std::move(result));
   }
 }
 
