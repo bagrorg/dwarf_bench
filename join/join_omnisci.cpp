@@ -27,27 +27,6 @@ build_join_id_buffer(const std::vector<uint32_t> &a,
   return ans;
 }
 
-std::vector<size_t> get_from_device(sycl::global_ptr<size_t> p, size_t size,
-                                    sycl::queue &q) {
-  std::vector<size_t> get(size);
-
-  {
-    sycl::buffer<size_t> get_buf(get);
-
-    q.submit([&](sycl::handler &cgh) {
-       auto get_acc = get_buf.get_access(cgh);
-
-       cgh.single_task([=]() {
-         for (int i = 0; i < size; i++) {
-           get_acc[i] = *(p + i);
-         }
-       });
-     }).wait();
-  }
-
-  return get;
-}
-
 bool are_equal(const std::vector<JoinOneToManySet> &expected,
                const std::vector<JoinOneToManyPtrs> &result, sycl::queue &q) {
   for (int i = 0; i < expected.size(); i++) {
